@@ -1,0 +1,73 @@
+{
+	"format_version": "1.12.0",
+	"minecraft:geometry": [
+		{
+			"description": {
+				"identifier": "geometry.beaver",
+				"texture_width": 64,
+				"texture_height": 64,
+				"visible_bounds_width": 4,
+				"visible_bounds_height": 2.5,
+				"visible_bounds_offset": [0, 0.75, 0]
+			},
+			"bones": [
+				{
+					"name": "body",
+					"pivot": [0, 6.44686, -1.56861],
+					"rotation": [90, 0, 0],
+					"cubes": [
+						{"origin": [-6, -0.12176, -4.01547], "size": [12, 14, 9], "pivot": [0, -10.12176, 2.98453], "rotation": [7, 0, 0], "uv": [0, 0]}
+					]
+				},
+				{
+					"name": "head",
+					"pivot": [0, 3.52762, -6.87575],
+					"cubes": [
+						{"origin": [-4, 1, -14], "size": [8, 6, 7], "pivot": [0, 0, 0], "rotation": [-2.5, 0, 0], "uv": [33, 29]},
+						{"origin": [-1, 3, -15], "size": [2, 2, 1], "pivot": [0, 0, 0], "rotation": [-2.5, 0, 0], "uv": [0, 6]},
+						{"origin": [-1, 1, -14], "size": [2, 1, 0], "uv": [5, 0]},
+						{"origin": [-2, 6, -14], "size": [2, 2, 1], "pivot": [-3, 6, -5], "rotation": [0, -42.5, 5], "uv": [0, 3]},
+						{"origin": [0, 6, -14], "size": [2, 2, 1], "pivot": [3, 6, -5], "rotation": [0, 42.5, -5], "uv": [0, 0]}
+					]
+				},
+				{
+					"name": "leg1",
+					"pivot": [-4.5, 5, 2.5],
+					"cubes": [
+						{"origin": [-7, 0, 0], "size": [5, 6, 5], "uv": [0, 36]},
+						{"origin": [-7, 0, -2], "size": [5, 0, 2], "uv": [26, 25]}
+					]
+				},
+				{
+					"name": "leg2",
+					"pivot": [4.5, 5, 2.5],
+					"cubes": [
+						{"origin": [2, 0, 0], "size": [5, 6, 5], "uv": [37, 18]},
+						{"origin": [2, 0, -2], "size": [5, 0, 2], "uv": [26, 23]}
+					]
+				},
+				{
+					"name": "leg3",
+					"pivot": [-4.5, 0.22017, -7.12091],
+					"cubes": [
+						{"origin": [-6, -0.18818, -8.60648], "size": [3, 1, 2], "uv": [1, 29]}
+					]
+				},
+				{
+					"name": "leg4",
+					"pivot": [5, 0.43359, -7.83284],
+					"cubes": [
+						{"origin": [3, 0, -9], "size": [3, 1, 2], "uv": [1, 25]}
+					]
+				},
+				{
+					"name": "tail",
+					"pivot": [0, 4.09013, 5.33834],
+					"cubes": [
+						{"origin": [-4, 5, 3], "size": [8, 1, 12], "pivot": [0, 0, 0], "rotation": [-20, 0, 0], "uv": [0, 23]}
+					]
+				}
+			]
+		}
+	]
+}
