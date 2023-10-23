@@ -5,26 +5,22 @@ import bodhi.beaver.entity.Beaver;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.util.Identifier;
-import org.jetbrains.annotations.Nullable;
 import net.minecraft.util.math.MathHelper;
-import software.bernie.geckolib3.core.AnimationState;
-import software.bernie.geckolib3.core.IAnimatable;
-import software.bernie.geckolib3.core.event.predicate.AnimationEvent;
-import software.bernie.geckolib3.core.processor.IBone;
-import software.bernie.geckolib3.model.AnimatedGeoModel;
-import software.bernie.geckolib3.model.provider.data.EntityModelData;
-
-import java.util.List;
+import software.bernie.geckolib.constant.DataTickets;
+import software.bernie.geckolib.core.animatable.model.CoreGeoBone;
+import software.bernie.geckolib.core.animation.AnimationState;
+import software.bernie.geckolib.model.GeoModel;
+import software.bernie.geckolib.model.data.EntityModelData;
 
 @Environment(EnvType.CLIENT)
-public class BeaverModel extends AnimatedGeoModel<Beaver> {
+public class BeaverModel extends GeoModel<Beaver> {
     @Override
-    public Identifier getModelResource(Beaver object) {
+    public Identifier getModelResource(Beaver animatable) {
         return new Identifier(EntityTesting.MOD_ID, "geo/beaver.geo.json");
     }
 
     @Override
-    public Identifier getTextureResource(Beaver object) {
+    public Identifier getTextureResource(Beaver animatable) {
         return new Identifier(EntityTesting.MOD_ID, "textures/beavertexture.png");
     }
 
@@ -34,20 +30,13 @@ public class BeaverModel extends AnimatedGeoModel<Beaver> {
     }
 
     @Override
-    public void setLivingAnimations(Beaver beaver, Integer uniqueID, AnimationEvent customPredicate) {
-        super.setCustomAnimations(beaver, uniqueID, customPredicate);
-        if (customPredicate == null) return;
+    public void setCustomAnimations(Beaver animatable, long instanceId, AnimationState<Beaver> animationState) {
+        CoreGeoBone head = getAnimationProcessor().getBone("head");
 
-        List<EntityModelData> extraDataOfType = customPredicate.getExtraDataOfType(EntityModelData.class);
-        IBone head = this.getAnimationProcessor().getBone("head");
-
-        if (beaver.isBaby()) {
-            head.setScaleX(1.4F);
-            head.setScaleY(1.4F);
-            head.setScaleZ(1.4F);
+        if (head != null) {
+            EntityModelData entityData = animationState.getData(DataTickets.ENTITY_MODEL_DATA);
+            head.setRotX(entityData.headPitch() * MathHelper.RADIANS_PER_DEGREE);
+            head.setRotY(entityData.netHeadYaw() * MathHelper.RADIANS_PER_DEGREE);
         }
-
-        head.setRotationX(extraDataOfType.get(0).headPitch * MathHelper.RADIANS_PER_DEGREE);
-        head.setRotationY(extraDataOfType.get(0).netHeadYaw * MathHelper.RADIANS_PER_DEGREE);
     }
 }

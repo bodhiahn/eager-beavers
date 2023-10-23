@@ -2,10 +2,10 @@
 	"schemaVersion": 1,
 	"id": "beavermod",
 	"version": "${version}",
-	"name": "beavermod",
-	"description": "This is an example description! Tell everyone what your mod is about!",
+	"name": "Eager Beavers",
+	"description": "Beaving Fun!",
 	"authors": [
-		"Me!"
+		"sqwigly"
 	],
 	"contact": {
 		"homepage": "https://fabricmc.net/",
@@ -23,11 +23,10 @@
 		]
 	},
 	"mixins": [
-		"beavermod.mixins.json"
 	],
 	"depends": {
 		"fabricloader": ">=0.14.21",
-		"minecraft": "~1.19.2",
+		"minecraft": "~1.19.4",
 		"java": ">=17",
 		"fabric-api": "*"
 	},

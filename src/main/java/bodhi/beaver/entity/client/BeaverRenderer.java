@@ -1,24 +1,22 @@
 package bodhi.beaver.entity.client;
 
-
 import bodhi.beaver.entity.Beaver;
-import bodhi.beaver.EntityTesting;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.OverlayTexture;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.entity.EntityRendererFactory;
 import net.minecraft.client.render.item.HeldItemRenderer;
-import net.minecraft.client.render.item.ItemRenderer;
-import net.minecraft.client.render.model.json.ModelTransformation;
+import net.minecraft.client.render.model.json.ModelTransformationMode;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.item.ItemStack;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.Vec3f;
-import software.bernie.geckolib3.geo.render.built.GeoBone;
-import software.bernie.geckolib3.renderers.geo.GeoEntityRenderer;
+import org.joml.Matrix4f;
+import software.bernie.geckolib.cache.object.BakedGeoModel;
+import software.bernie.geckolib.cache.object.GeoBone;
+import software.bernie.geckolib.core.animatable.model.CoreGeoBone;
+import software.bernie.geckolib.renderer.GeoEntityRenderer;
+
+import java.util.Optional;
 
 public class BeaverRenderer extends GeoEntityRenderer<Beaver> {
     private final HeldItemRenderer heldItemRenderer;
@@ -28,45 +26,45 @@ public class BeaverRenderer extends GeoEntityRenderer<Beaver> {
         this.shadowRadius = 0.4f;
         this.heldItemRenderer = ctx.getHeldItemRenderer();
     }
+
     @Override
-    public void renderEarly(Beaver animatable, MatrixStack stackIn, float ticks, VertexConsumerProvider renderTypeBuffer, VertexConsumer vertexBuilder, int packedLightIn, int packedOverlayIn, float red, float green, float blue, float partialTicks) {
-        beaver = animatable;
-        super.renderEarly(animatable, stackIn, ticks, renderTypeBuffer, vertexBuilder, packedLightIn, packedOverlayIn, red, green, blue, partialTicks);
-    }
-    @Override
-    public Identifier getTextureResource(Beaver instance) {
-        return new Identifier(EntityTesting.MOD_ID, "textures/beavertexture.png");
-    }
-    @Override
-    public void renderRecursively(GeoBone bone, MatrixStack stack, VertexConsumer bufferIn, int packedLightIn, int packedOverlayIn, float red, float green, float blue, float alpha) {
+    public void renderRecursively(MatrixStack poseStack, Beaver beaver, GeoBone bone, RenderLayer renderType, VertexConsumerProvider bufferSource, VertexConsumer buffer, boolean isReRender, float partialTick, int packedLight,
+                                  int packedOverlay, float red, float green, float blue, float alpha) {
         ItemStack heldItem = beaver.getEquippedStack(EquipmentSlot.MAINHAND);
+
         if (bone.getName().equals("leg3") && !heldItem.isEmpty()) {
-            stack.push();
+            poseStack.push();
             if (!beaver.isTouchingWater()) {
-                stack.translate(0, 0.2, -0.45);
+                poseStack.translate(0, 0.2, -0.45);
             } else {
-                stack.translate(0, -.4, -0.5);
+                poseStack.translate(0, -.4, -0.5);
             }
             //stack.multiply(Vec3f.POSITIVE_X.getDegreesQuaternion(-90));
-            stack.scale(1.7f, 1.7f, 1.7f);
+            poseStack.scale(1.7f, 1.7f, 1.7f);
 
-            heldItemRenderer.renderItem(beaver, heldItem, ModelTransformation.Mode.GROUND, false, stack, rtb, packedLightIn);
-            stack.pop();
+            heldItemRenderer.renderItem(beaver, heldItem, ModelTransformationMode.GROUND, false, poseStack, bufferSource, packedLight);
+            poseStack.pop();
 
-            bufferIn = rtb.getBuffer(RenderLayer.getEntityCutout(whTexture));
+            buffer = bufferSource.getBuffer(RenderLayer.getEntityCutout(getTexture(beaver)));
         }
-        super.renderRecursively(bone, stack, bufferIn, packedLightIn, packedOverlayIn, red, green, blue, alpha);
+        super.renderRecursively(poseStack, beaver,  bone,  renderType,  bufferSource,  buffer,  isReRender,  partialTick,  packedLight,
+         packedOverlay, red,  green,  blue,  alpha);
     }
 
     @Override
-    public RenderLayer getRenderType(Beaver animatable, float partialTicks, MatrixStack stack,
-                                     VertexConsumerProvider renderTypeBuffer, VertexConsumer vertexBuilder,
-                                     int packedLightIn, Identifier textureLocation) {
-        if (animatable.isBaby()) {
-            stack.scale(0.4f, 0.4f, 0.4f);
+    public void preRender(MatrixStack poseStack, Beaver beaver, BakedGeoModel model, VertexConsumerProvider bufferSource, VertexConsumer buffer, boolean isReRender, float partialTick, int packedLight, int packedOverlay, float red, float green, float blue,
+                          float alpha) {
+        if (beaver.isBaby()) {
+            poseStack.scale(0.4f, 0.4f, 0.4f);
+            Optional<GeoBone> head = model.getBone("head");
+            head.ifPresent(geoBone -> {
+                geoBone.setScaleX(1.4f);
+                geoBone.setScaleY(1.4f);
+                geoBone.setScaleZ(1.4f);
+            });
         } else {
-            stack.scale(0.8f, 0.8f, 0.8f);
+            poseStack.scale(0.8f, 0.8f, 0.8f);
         }
-        return super.getRenderType(animatable, partialTicks, stack, renderTypeBuffer, vertexBuilder, packedLightIn, textureLocation);
+        super.preRender(poseStack, beaver, model, bufferSource, buffer, isReRender, packedLight, packedOverlay, packedLight, red, green, blue, alpha);
     }
 }

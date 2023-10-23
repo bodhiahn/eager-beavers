@@ -6,7 +6,7 @@ import com.google.common.collect.Lists;
 import net.minecraft.advancement.criterion.Criteria;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
+import net.minecraft.block.PillarBlock;
 import net.minecraft.entity.*;
 import net.minecraft.entity.ai.goal.*;
 import net.minecraft.entity.attribute.DefaultAttributeContainer;
@@ -14,12 +14,9 @@ import net.minecraft.entity.attribute.EntityAttributes;
 import net.minecraft.entity.data.DataTracker;
 import net.minecraft.entity.data.TrackedData;
 import net.minecraft.entity.data.TrackedDataHandlerRegistry;
-import net.minecraft.entity.mob.EndermanEntity;
 import net.minecraft.entity.mob.MobEntity;
-import net.minecraft.entity.mob.PathAwareEntity;
 import net.minecraft.entity.passive.AnimalEntity;
 import net.minecraft.entity.passive.PassiveEntity;
-import net.minecraft.entity.passive.TurtleEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.fluid.Fluids;
 import net.minecraft.item.BlockItem;
@@ -30,44 +27,53 @@ import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtElement;
 import net.minecraft.nbt.NbtHelper;
 import net.minecraft.nbt.NbtList;
+import net.minecraft.particle.BlockStateParticleEffect;
 import net.minecraft.particle.ItemStackParticleEffect;
 import net.minecraft.particle.ParticleTypes;
 import net.minecraft.recipe.Ingredient;
+import net.minecraft.registry.tag.BlockTags;
+import net.minecraft.registry.tag.FluidTags;
+import net.minecraft.registry.tag.ItemTags;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.sound.SoundEvent;
 import net.minecraft.sound.SoundEvents;
 import net.minecraft.stat.Stats;
-import net.minecraft.tag.BlockTags;
-import net.minecraft.tag.FluidTags;
-import net.minecraft.tag.ItemTags;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.math.random.Random;
 import net.minecraft.world.*;
 import net.minecraft.world.event.GameEvent;
 import org.jetbrains.annotations.Nullable;
-import software.bernie.geckolib3.core.IAnimatable;
-import software.bernie.geckolib3.core.PlayState;
-import software.bernie.geckolib3.core.builder.AnimationBuilder;
-import software.bernie.geckolib3.core.builder.ILoopType;
-import software.bernie.geckolib3.core.controller.AnimationController;
-import software.bernie.geckolib3.core.event.predicate.AnimationEvent;
-import software.bernie.geckolib3.core.manager.AnimationData;
-import software.bernie.geckolib3.core.manager.AnimationFactory;
-import software.bernie.geckolib3.util.GeckoLibUtil;
+import software.bernie.geckolib.animatable.GeoEntity;
+import software.bernie.geckolib.core.animatable.GeoAnimatable;
+import software.bernie.geckolib.core.animatable.instance.AnimatableInstanceCache;
+import software.bernie.geckolib.core.animation.AnimatableManager;
+import software.bernie.geckolib.core.animation.AnimationController;
+import software.bernie.geckolib.core.animation.RawAnimation;
+import software.bernie.geckolib.core.object.PlayState;
+import software.bernie.geckolib.util.GeckoLibUtil;
+
 
 import java.util.*;
 import java.util.function.Predicate;
 
-public class Beaver extends AnimalEntity implements IAnimatable {
+public class Beaver extends AnimalEntity implements GeoEntity {
     private static final Ingredient BREEDING_INGREDIENT = Ingredient.ofItems(Items.OAK_WOOD, Items.BIRCH_WOOD, Items.DARK_OAK_WOOD, Items.SPRUCE_SAPLING);
     private static final TrackedData<Optional<UUID>> OWNER = DataTracker.registerData(Beaver.class, TrackedDataHandlerRegistry.OPTIONAL_UUID);
     private static final TrackedData<Optional<UUID>> OTHER_TRUSTED = DataTracker.registerData(Beaver.class, TrackedDataHandlerRegistry.OPTIONAL_UUID);
-    private static final TrackedData<Optional<BlockState>> CARRIED_BLOCK = DataTracker.registerData(EndermanEntity.class, TrackedDataHandlerRegistry.OPTIONAL_BLOCK_STATE);
-
+    private static final TrackedData<Optional<BlockState>> CARRIED_BLOCK = DataTracker.registerData(Beaver.class, TrackedDataHandlerRegistry.OPTIONAL_BLOCK_STATE);
     static final Predicate<ItemEntity> PICKABLE_DROP_FILTER = item -> !item.cannotPickup() && item.isAlive();
     private int eatingTime;
-    private final AnimationFactory factory = GeckoLibUtil.createFactory(this);
+    private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
+
+    protected static final RawAnimation HOLD_IDLE_ANIM = RawAnimation.begin().thenLoop("animation.beaver.holdidle");
+    protected static final RawAnimation HOLD_WALK_ANIM = RawAnimation.begin().thenLoop("animation.beaver.holdwalk");
+    protected static final RawAnimation WALK_ANIM = RawAnimation.begin().thenLoop("animation.beaver.walk");
+    protected static final RawAnimation IDLE_ANIM = RawAnimation.begin().thenLoop("animation.beaver.idle");
+    protected static final RawAnimation SWIM_ANIM = RawAnimation.begin().thenLoop("animation.beaver.swim");
+
     public Beaver(EntityType<? extends AnimalEntity> entityType, World world) {
         super(entityType, world);
         this.setCanPickUpLoot(true);
@@ -82,12 +88,33 @@ public class Beaver extends AnimalEntity implements IAnimatable {
                 .add(EntityAttributes.GENERIC_KNOCKBACK_RESISTANCE, 20)
                 .add(EntityAttributes.GENERIC_MOVEMENT_SPEED, 0.4f);
     }
+
+    private boolean isEatingTree = false;
+
+    public void startEatingTree() {
+        this.isEatingTree = true;
+    }
+
+    public void stopEatingTree() {
+        this.isEatingTree = false;
+    }
+
+    public boolean isEatingTree() {
+        return this.isEatingTree;
+    }
+
     public class BeaverSwimGoal extends Goal {
         private final Beaver beaver;
+        private final double swimSpeed;
+        private final int diveFrequency; // How often the beaver decides to dive.
+        private int diveTimer; // Timer to handle diving and surfacing.
 
         public BeaverSwimGoal(Beaver beaver) {
             this.beaver = beaver;
-            this.setControls(EnumSet.of(Goal.Control.JUMP));
+            this.swimSpeed = 1.5; // Adjust as needed
+            this.diveFrequency = 80; // Every 80 ticks on average, adjust as needed.
+            this.diveTimer = 0;
+            this.setControls(EnumSet.of(Goal.Control.JUMP, Goal.Control.MOVE));
             beaver.getNavigation().setCanSwim(true);
         }
 
@@ -96,43 +123,78 @@ public class Beaver extends AnimalEntity implements IAnimatable {
             return beaver.isTouchingWater() && beaver.getFluidHeight(FluidTags.WATER) > (beaver.isBaby() ? 0.1D : 0.2D) || beaver.isInLava();
         }
 
+        @Override
         public void tick() {
-            if (beaver.getRandom().nextFloat() < 0.8F) {
-                beaver.getJumpControl().setActive();
+            // Randomly decide to dive or come up based on diveTimer.
+            if (diveTimer == 0 && beaver.getRandom().nextInt(diveFrequency) == 0) {
+                diveTimer = beaver.getRandom().nextInt(40) + 40; // Dive for 40 to 80 ticks.
+            }
+            if (diveTimer > 0) {
+                // When diveTimer is active, move beaver downwards.
+                Vec3d motion = beaver.getVelocity();
+                beaver.setVelocity(motion.x, -0.03, motion.z); // Adjust -0.3 for faster or slower dives.
+                diveTimer--;
+            } else {
+                // Usual swim behavior.
+                if (beaver.getRandom().nextFloat() < 0.8F) {
+                    beaver.getJumpControl().setActive();
+                }
             }
 
-            world.addParticle(ParticleTypes.BUBBLE ,beaver.getX(), beaver.getY(), beaver.getZ(), 0.1, .3, 0.1);
+            // Adjust the beaver's speed while swimming.
+            if (beaver.isInsideWaterOrBubbleColumn()) {
+                beaver.setMovementSpeed((float) swimSpeed);
+            }
+
+            // Create bubbles.
+            beaver.world.addParticle(ParticleTypes.BUBBLE, beaver.getX(), beaver.getY(), beaver.getZ(), 0.1, .3, 0.1);
         }
     }
-
-    private <E extends IAnimatable> PlayState predicate(AnimationEvent<E> event) {
-        boolean isSwimming = this.isTouchingWater();
-        boolean isHoldingItem = !this.getEquippedStack(EquipmentSlot.MAINHAND).isEmpty();
-        if (isSwimming) {
-            event.getController().setAnimation(new AnimationBuilder().addAnimation("animation.beaver.swim", ILoopType.EDefaultLoopTypes.LOOP));
-            return PlayState.CONTINUE;
-        } else if (event.isMoving() && !isSwimming) {
-            if (!isHoldingItem) {
-                event.getController().setAnimation(new AnimationBuilder().addAnimation("animation.beaver.walk", ILoopType.EDefaultLoopTypes.LOOP));
-            } else {
-                event.getController().setAnimation(new AnimationBuilder().addAnimation("animation.beaver.holdwalk", ILoopType.EDefaultLoopTypes.LOOP));
-            }
-            return PlayState.CONTINUE;
-        } else {
-            if (!isHoldingItem) {
-                event.getController().setAnimation(new AnimationBuilder().addAnimation("animation.beaver.idle", ILoopType.EDefaultLoopTypes.LOOP));
-            } else {
-                event.getController().setAnimation(new AnimationBuilder().addAnimation("animation.beaver.holdidle", ILoopType.EDefaultLoopTypes.LOOP));
-            }
-            return PlayState.CONTINUE;
-        }
+    @Override
+    public AnimatableInstanceCache getAnimatableInstanceCache() {
+        return this.cache;
     }
 
     @Override
-    public void registerControllers(AnimationData animationData) {
-        animationData.addAnimationController(new AnimationController(this, "controller",
-                0, this::predicate));
+    public void registerControllers(AnimatableManager.ControllerRegistrar controllers) {
+        controllers.add(genericWalkIdleController(this));
+        controllers.add(swimController(this));
+        controllers.add(eatingController(this));
     }
+
+    public static <T extends GeoAnimatable> AnimationController<Beaver> genericWalkIdleController(Beaver entity) {
+        return new AnimationController<Beaver>(entity, "Walk/Idle", 0, state -> {
+            boolean isHoldingItem = !entity.getEquippedStack(EquipmentSlot.MAINHAND).isEmpty();
+            boolean isSwimming = entity.isTouchingWater();
+
+            if (!isSwimming) {
+                if (state.isMoving()) {
+                    return state.setAndContinue(isHoldingItem ? HOLD_WALK_ANIM : WALK_ANIM);
+                } else {
+                    return state.setAndContinue(isHoldingItem ? HOLD_IDLE_ANIM : IDLE_ANIM);
+                }
+            }
+            return PlayState.STOP;
+        });
+    }
+    public static <T extends GeoAnimatable> AnimationController<Beaver> swimController(Beaver beaver) {
+        return new AnimationController<Beaver>(beaver, "Swim", 0, state -> {
+            if (beaver.isTouchingWater())
+                return state.setAndContinue(SWIM_ANIM);
+            return PlayState.STOP;
+            });
+    }
+
+    public static <T extends GeoAnimatable> AnimationController<Beaver> eatingController(Beaver beaver) {
+        return new AnimationController<Beaver>(beaver, "Eat", 0, state -> {
+            if (beaver.isEatingTree())
+                return state.setAndContinue(HOLD_IDLE_ANIM);
+            return PlayState.STOP;
+        });
+    }
+
+
+
     public void setCarriedBlock(@Nullable BlockState state) {
         this.dataTracker.set(CARRIED_BLOCK, Optional.ofNullable(state));
     }
@@ -160,16 +222,6 @@ public class Beaver extends AnimalEntity implements IAnimatable {
                 }
             }
         }
-        if (this.isTouchingWater()) {
-            ItemStack itemStack = this.getEquippedStack(EquipmentSlot.MAINHAND);
-            BlockState blockState3 = this.getCarriedBlock();
-            if (blockState3 != null) {
-                world.setBlockState(this.getBlockPos(), blockState3, Block.NOTIFY_NEIGHBORS);
-                //world.emitGameEvent(GameEvent.BLOCK_PLACE, this.getBlockPos(), GameEvent.Emitter.of(this, blockState3));
-                this.setCarriedBlock(null);
-                itemStack.decrement(1);
-            }
-        }
         super.tickMovement();
     }
     void addTrustedUuid(@Nullable UUID uuid) {
@@ -179,6 +231,64 @@ public class Beaver extends AnimalEntity implements IAnimatable {
             this.dataTracker.set(OWNER, Optional.ofNullable(uuid));
         }
     }
+
+    public class WaterWanderGoal extends Goal {
+        private final Beaver beaver;
+        private final double speed;
+        private double targetX;
+        private double targetY;
+        private double targetZ;
+
+        public WaterWanderGoal(Beaver beaver, double speed) {
+            this.beaver = beaver;
+            this.speed = speed;
+            setControls(EnumSet.of(Goal.Control.MOVE));
+        }
+
+        @Override
+        public boolean canStart() {
+            if (beaver.isTouchingWater() && beaver.getNavigation().isIdle()) {
+                // We'll generate a random destination in the water every few ticks
+                if (beaver.getRandom().nextInt(10) == 0) {
+                    Vec3d targetVec = this.generateWaterTarget();
+                    if (targetVec != null) {
+                        this.targetX = targetVec.x;
+                        this.targetY = targetVec.y;
+                        this.targetZ = targetVec.z;
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        @Override
+        public boolean shouldContinue() {
+            return !beaver.getNavigation().isIdle();
+        }
+
+        @Override
+        public void start() {
+            beaver.getNavigation().startMovingTo(targetX, targetY, targetZ, speed);
+        }
+
+        private Vec3d generateWaterTarget() {
+            Random random = beaver.getRandom();
+            double angle = random.nextDouble() * 2 * Math.PI;
+            double distance = 8 + random.nextDouble() * 8;
+            double targetX = beaver.getX() + Math.sin(angle) * distance;
+            double targetZ = beaver.getZ() + Math.cos(angle) * distance;
+            double targetY = beaver.getY() + random.nextDouble() * 6 - 3;
+
+            BlockPos targetPos = new BlockPos((int) targetX, (int) targetY, (int) targetZ);
+            while (!beaver.world.getBlockState(targetPos).getFluidState().isIn(FluidTags.WATER) && targetPos.getY() > 1) {
+                targetPos = targetPos.down();
+            }
+
+            return beaver.world.getBlockState(targetPos).getFluidState().isIn(FluidTags.WATER) ? new Vec3d(targetX, targetY, targetZ) : null;
+        }
+    }
+
     class MateGoal extends AnimalMateGoal {
         public MateGoal(double chance) {
             super(Beaver.this, chance);
@@ -238,15 +348,14 @@ public class Beaver extends AnimalEntity implements IAnimatable {
             if (i > 1) {
                 this.dropItem(itemStack.split(i - 1));
             }
+            if (itemStack.getItem() instanceof BlockItem blockItem) {
+                this.setCarriedBlock(blockItem.getBlock().getDefaultState());
+            }
             this.triggerItemPickedUpByEntityCriteria(item);
             this.equipStack(EquipmentSlot.MAINHAND, itemStack.split(1));
             this.updateDropChances(EquipmentSlot.MAINHAND);
             this.sendPickup(item, itemStack.getCount());
-            if (itemStack.getItem() instanceof BlockItem blockItem) {
-                if (blockItem.getBlock().getDefaultState().isIn(BlockTags.LOGS)) {
-                    setCarriedBlock(blockItem.getBlock().getDefaultState());
-                }
-            }
+
             item.discard();
             this.eatingTime = 0;
         }
@@ -268,12 +377,7 @@ public class Beaver extends AnimalEntity implements IAnimatable {
     }
     @Override
     protected void initEquipment(Random random, LocalDifficulty localDifficulty) {
-        if (random.nextFloat() < 0.2f) {
-            float f = random.nextFloat();
-            ItemStack itemStack = new ItemStack(Items.OAK_LOG);
-            this.equipStack(EquipmentSlot.MAINHAND, itemStack);
-            Beaver.this.setCarriedBlock(Blocks.OAK_LOG.getDefaultState());
-        }
+        //used to have them start with logs occasionally, but its unnecessary
     }
 
     @Override
@@ -316,11 +420,6 @@ public class Beaver extends AnimalEntity implements IAnimatable {
     }
 
     @Override
-    public AnimationFactory getFactory() {
-        return factory;
-    }
-
-    @Override
     public boolean canPickupItem(ItemStack stack) {
         Item item = stack.getItem();
         ItemStack itemStack = this.getEquippedStack(EquipmentSlot.MAINHAND);
@@ -331,44 +430,45 @@ public class Beaver extends AnimalEntity implements IAnimatable {
         return !this.isSleeping();
     }
 
-    class PickupItemGoal
-            extends Goal {
-        public PickupItemGoal() {
+    class PickupItemGoal extends Goal {
+        private final Beaver beaver;
+        public PickupItemGoal(Beaver mob) {
             this.setControls(EnumSet.of(Goal.Control.MOVE));
+            this.beaver = mob;
         }
 
         @Override
         public boolean canStart() {
-            if (!Beaver.this.getEquippedStack(EquipmentSlot.MAINHAND).isEmpty()) {
+            if (!this.beaver.getEquippedStack(EquipmentSlot.MAINHAND).isEmpty()) {
                 return false;
             }
-            if (Beaver.this.getTarget() != null || Beaver.this.getAttacker() != null) {
+            if (this.beaver.getTarget() != null || this.beaver.getAttacker() != null) {
                 return false;
             }
-            if (!Beaver.this.wantsToPickupItem()) {
+            if (!this.beaver.wantsToPickupItem()) {
                 return false;
             }
-            if (Beaver.this.getRandom().nextInt(Beaver.PickupItemGoal.toGoalTicks(10)) != 0) {
+            if (this.beaver.getRandom().nextInt(Beaver.PickupItemGoal.toGoalTicks(10)) != 0) {
                 return false;
             }
-            List<ItemEntity> list = Beaver.this.world.getEntitiesByClass(ItemEntity.class, Beaver.this.getBoundingBox().expand(8.0, 8.0, 8.0), PICKABLE_DROP_FILTER);
-            return !list.isEmpty() && Beaver.this.getEquippedStack(EquipmentSlot.MAINHAND).isEmpty();
+            List<ItemEntity> list = this.beaver.world.getEntitiesByClass(ItemEntity.class, this.beaver.getBoundingBox().expand(8.0, 8.0, 8.0), PICKABLE_DROP_FILTER);
+            return !list.isEmpty() && this.beaver.getEquippedStack(EquipmentSlot.MAINHAND).isEmpty();
         }
 
         @Override
         public void tick() {
-            List<ItemEntity> list = Beaver.this.world.getEntitiesByClass(ItemEntity.class, Beaver.this.getBoundingBox().expand(8.0, 8.0, 8.0), PICKABLE_DROP_FILTER);
-            ItemStack itemStack = Beaver.this.getEquippedStack(EquipmentSlot.MAINHAND);
+            List<ItemEntity> list = this.beaver.world.getEntitiesByClass(ItemEntity.class, this.beaver.getBoundingBox().expand(8.0, 8.0, 8.0), PICKABLE_DROP_FILTER);
+            ItemStack itemStack = this.beaver.getEquippedStack(EquipmentSlot.MAINHAND);
             if (itemStack.isEmpty() && !list.isEmpty()) {
-                Beaver.this.getNavigation().startMovingTo(list.get(0), .6f);
+                this.beaver.getNavigation().startMovingTo(list.get(0), .6f);
             }
         }
 
         @Override
         public void start() {
-            List<ItemEntity> list = Beaver.this.world.getEntitiesByClass(ItemEntity.class, Beaver.this.getBoundingBox().expand(8.0, 8.0, 8.0), PICKABLE_DROP_FILTER);
+            List<ItemEntity> list = this.beaver.world.getEntitiesByClass(ItemEntity.class, this.beaver.getBoundingBox().expand(8.0, 8.0, 8.0), PICKABLE_DROP_FILTER);
             if (!list.isEmpty()) {
-                Beaver.this.getNavigation().startMovingTo(list.get(0), .6f);
+                this.beaver.getNavigation().startMovingTo(list.get(0), .6f);
             }
         }
     }
@@ -399,27 +499,39 @@ public class Beaver extends AnimalEntity implements IAnimatable {
     }
 
     @Override
+    protected SoundEvent getAmbientSound() {
+        return ModSounds.BEAVER_AMBIENT;
+    }
+
+    @Override
+    protected void playStepSound(BlockPos pos, BlockState state) {
+        this.playSound(SoundEvents.ENTITY_PIG_STEP, 0.15f, 1.5f);
+    }
+
+    @Override
     public void playAmbientSound() {
         if (isBaby()) {
-            this.playSound(ModSounds.BEAVER_AMBIENT, 0.3f, getSoundPitch());
+            this.playSound(getAmbientSound(), 0.3f, getSoundPitch());
             return;
         }
-        this.playSound(ModSounds.BEAVER_AMBIENT, 0.10f, getSoundPitch());
+        this.playSound(getAmbientSound(), 0.10f, getSoundPitch());
     }
 
     @Override
     protected void initGoals() {
         this.goalSelector.add(0, new BeaverSwimGoal(this));
-        this.goalSelector.add(1, new EscapeDangerGoal(this, 1.25f));
-        this.goalSelector.add(11, new PickupItemGoal());
+        this.goalSelector.add(1, new EscapeDangerGoal(this, 1.0f));
+        this.goalSelector.add(8, new PickupItemGoal(this));
         this.goalSelector.add(3, new MateGoal(1.0));
-        this.goalSelector.add(5, new Beaver.DamGoal(this, 0.6f, 30, 1));
-        this.goalSelector.add(6, new Beaver.BeavGoal(.6f, 15, 1));
-        this.goalSelector.add(4, new TemptGoal(this, .5f, BREEDING_INGREDIENT, false));
-        this.goalSelector.add(5, new FollowParentGoal(this, .7f));
-        this.goalSelector.add(7, new WanderAroundGoal(this, .5f));
-        this.goalSelector.add(8, new LookAtEntityGoal(this, PlayerEntity.class, 6.0f));
-        this.goalSelector.add(9, new LookAroundGoal(this));
+        this.goalSelector.add(15, new WaterWanderGoal(this, 1.0));
+        this.goalSelector.add(2, new Beaver.DamGoal(this, 0.6f, 30, 1));
+        this.goalSelector.add(4, new Beaver.BeavGoal(this, .6f, 16, 3));
+        this.goalSelector.add(3, new Beaver.PickupSidewaysLogGoal(this, .6f));
+        this.goalSelector.add(7, new TemptGoal(this, .5f, BREEDING_INGREDIENT, false));
+        this.goalSelector.add(8, new FollowParentGoal(this, .7f));
+        this.goalSelector.add(9, new WanderAroundGoal(this, .5f));
+        this.goalSelector.add(10, new LookAtEntityGoal(this, PlayerEntity.class, 6.0f));
+        this.goalSelector.add(11, new LookAroundGoal(this));
     }
 
     @Nullable
@@ -444,49 +556,207 @@ public class Beaver extends AnimalEntity implements IAnimatable {
             super.tick();
             if (this.hasReached()) {
                 ItemStack itemStack = this.beaver.getEquippedStack(EquipmentSlot.MAINHAND);
-                BlockState blockState3 = this.beaver.getCarriedBlock();
-                if (blockState3 == null) {
+                BlockState blockState = this.beaver.getCarriedBlock();
+                if (blockState == null) {
                     return;
                 }
-                world.setBlockState(targetPos, blockState3, Block.NOTIFY_ALL);
-                world.emitGameEvent(GameEvent.BLOCK_PLACE, targetPos, GameEvent.Emitter.of(this.beaver, blockState3));
-                this.beaver.setCarriedBlock(null);
-                itemStack.decrement(1);
+                World world = this.beaver.world;
+                boolean blockPlaced = world.setBlockState(targetPos, blockState, Block.NOTIFY_ALL);
+                if(blockPlaced){
+                    world.emitGameEvent(GameEvent.BLOCK_PLACE, targetPos, GameEvent.Emitter.of(this.beaver, blockState));
+                    this.beaver.setCarriedBlock(null);
+                    if (blockState.getBlock().asItem() == itemStack.getItem()) {
+                        itemStack.decrement(1);
+                    }
+                    this.stop();
+                }
             }
         }
 
         @Override
         public boolean canStart() {
-            ItemStack itemStack = Beaver.this.getEquippedStack(EquipmentSlot.MAINHAND);
-            if (!itemStack.isEmpty()) {
+            ItemStack itemStack = this.beaver.getEquippedStack(EquipmentSlot.MAINHAND);
+            BlockState carriedBlock = this.beaver.getCarriedBlock();
+            if (!itemStack.isEmpty() || carriedBlock != null) {
                 return super.canStart();
-
             }
             return false;
+        }
+        @Override
+        public boolean shouldResetPath() {
+            return this.tryingTime % 50 == 0;
         }
 
         @Override
         protected boolean isTargetPos(WorldView world, BlockPos pos) {
             BlockState blockState = world.getBlockState(pos);
-            return (blockState.getFluidState().getFluid() == Fluids.WATER);
+
+            // Early exit if the current block is not water.
+            if (blockState.getFluidState().getFluid() != Fluids.WATER) {
+                return false;
+            }
+
+            boolean touchingSolid = false;
+
+            // Count the number of adjacent water blocks and check if there's a solid block.
+            for (Direction dir : Direction.values()) {
+                BlockState adjacentState = world.getBlockState(pos.offset(dir));
+                if (dir != Direction.UP && adjacentState.isOpaque() && dir != Direction.DOWN) {
+                    touchingSolid = true;
+                }
+                if (world.getBlockState(pos.up()).getFluidState().getFluid() == Fluids.WATER) {
+                    touchingSolid = false;
+                }
+            }
+
+            // Add a condition to check if the current location has the maximum number of adjacent water blocks.
+            return touchingSolid;
         }
     }
 
+    // Check if the block is a log
+    private boolean isLog(BlockState state) {
+        return state.isIn(BlockTags.LOGS);
+    }
 
-    public class BeavGoal
-            extends MoveToTargetPosGoal {
-        private static final int EATING_TIME = 20;
-        protected int timer;
-
-        public BeavGoal(double speed, int range, int maxYDifference) {
-            super(Beaver.this, speed, range, maxYDifference);
+    // Get the sideways state of a log
+    private BlockState getSidewaysLogState(BlockState original) {
+        if (original.getBlock() instanceof PillarBlock) {
+            return original.with(PillarBlock.AXIS, Direction.Axis.X);
         }
+        // If the block isn't a PillarBlock (or doesn't have the AXIS property),
+        // simply return the original state or some default.
+        return original;
+    }
 
+    public class PickupSidewaysLogGoal extends MoveToTargetPosGoal {
+        private static final int EATING_TIME = 30;
+        private final Beaver beaver;
+        protected int timer = 0;
         @Override
         public double getDesiredDistanceToTarget() {
             return 2.0;
         }
 
+        public PickupSidewaysLogGoal(Beaver beaver, double speed) {
+            super(beaver, speed, 10);
+            this.beaver = beaver;
+        }
+
+        @Override
+        public boolean canStop() {
+            return this.timer >= EATING_TIME;
+        }
+
+        private boolean isSidewaysLog(BlockState state) {
+            if (state.getBlock() instanceof PillarBlock) {
+                Direction.Axis axis = state.get(PillarBlock.AXIS);
+                return axis == Direction.Axis.X || axis == Direction.Axis.Z;
+            }
+            return false;
+        }
+        @Override
+        protected boolean isTargetPos(WorldView world, BlockPos pos) {
+            BlockState state = world.getBlockState(pos);
+            // First check if it's a log and then check its orientation.
+            return isLog(state) && isSidewaysLog(state) && !isNearWater(world, pos);
+        }
+
+        private boolean isNearWater(WorldView world, BlockPos pos) {
+            return world.getBlockState(pos.east()).getFluidState().isIn(FluidTags.WATER) ||
+                    world.getBlockState(pos.west()).getFluidState().isIn(FluidTags.WATER) ||
+                    world.getBlockState(pos.north()).getFluidState().isIn(FluidTags.WATER) ||
+                    world.getBlockState(pos.south()).getFluidState().isIn(FluidTags.WATER);
+        }
+
+        @Override
+        public boolean shouldContinue() {
+            // If the target block is no longer a log, stop.
+            if (!isLog(beaver.world.getBlockState(this.targetPos))) {
+                return false;
+            }
+
+            // If the beaver cannot pathfind to the block, stop.
+//            if (this.beaver.getNavigation().findPathTo(this.targetPos, 1) == null) {
+//                return false;
+//            }
+
+            return super.shouldContinue();
+        }
+
+        @Override
+        public void tick() {
+            super.tick();
+            ServerWorld world = (ServerWorld) beaver.getWorld();
+            if (this.hasReached()) {
+                if (this.timer < EATING_TIME) {
+                    this.beaver.startEatingTree();
+                    if (this.timer % 5 == 0) {
+                        Vec3d blockCenter = new Vec3d(this.targetPos.getX() + 0.5, this.targetPos.getY() + 0.5, this.targetPos.getZ() + 0.5);
+                        Vec3d beaverPos = new Vec3d(beaver.getX(), beaver.getY(), beaver.getZ());
+
+                        Vec3d direction = blockCenter.subtract(beaverPos).normalize();
+
+                        // Adjust the spawn position to be on the side of the block facing the beaver
+                        double spawnX = blockCenter.x + direction.x * 0.5;
+                        double spawnY = blockCenter.y + direction.y * 0.5;
+                        double spawnZ = blockCenter.z + direction.z * 0.5;
+
+                        world.spawnParticles(new BlockStateParticleEffect(ParticleTypes.BLOCK, this.beaver.world.getBlockState(this.targetPos)),
+                                spawnX, spawnY, spawnZ, 200,
+                                0.0D, 0.0D, 0.0D, 2.0D);
+
+                        this.beaver.playSound(SoundEvents.ENTITY_GENERIC_EAT, .4f, 1.5f);
+                    }
+                    this.timer++;
+                } else {
+                    this.pickUpLog();
+                    this.beaver.stopEatingTree();
+                    timer = 0; // Reset the timer for the next log
+                }
+            }
+        }
+
+        private void pickUpLog() {
+            BlockState state = this.beaver.world.getBlockState(this.targetPos);
+            if (isLog(state) && isSidewaysLog(state)) {
+                World world = this.beaver.world;
+                this.beaver.equipStack(EquipmentSlot.MAINHAND, new ItemStack(state.getBlock()));
+                this.beaver.playSound(SoundEvents.BLOCK_WOOD_BREAK, 1.0f, 1.0f);
+                this.beaver.setCarriedBlock(state);
+                world.breakBlock(this.targetPos, false);
+            }
+        }
+    }
+
+
+    public class BeavGoal extends MoveToTargetPosGoal {
+        private static final int EATING_TIME = 30;
+        protected int timer;
+        private final Beaver beaver;
+        public BeavGoal(Beaver mob, double speed, int range, int maxYDifference) {
+            super(mob, speed, range, maxYDifference);
+            this.beaver = mob;
+        }
+
+        @Override
+        public double getDesiredDistanceToTarget() {
+            return 2.95;
+        }
+        @Override
+        public boolean shouldContinue() {
+            // If the target block is no longer a log, stop.
+            if (!isLog(beaver.world.getBlockState(this.targetPos))) {
+                return false;
+            }
+
+            // If the beaver cannot pathfind to the block, stop.
+//            if (this.beaver.getNavigation().findPathTo(this.targetPos, 1) == null) {
+//                return false;
+//            }
+
+            return super.shouldContinue();
+        }
         @Override
         public boolean shouldResetPath() {
             return this.tryingTime % 100 == 0;
@@ -495,53 +765,121 @@ public class Beaver extends AnimalEntity implements IAnimatable {
         @Override
         protected boolean isTargetPos(WorldView world, BlockPos pos) {
             BlockState blockState = world.getBlockState(pos);
-            if (blockState.isOf(Blocks.OAK_LOG)) {
-                if (!(world.getBlockState(pos.east()).getFluidState().isIn(FluidTags.WATER) || world.getBlockState(pos.north()).getFluidState().isIn(FluidTags.WATER) || world.getBlockState(pos.south()).getFluidState().isIn(FluidTags.WATER))) {
-                    return true;
-                }
-            }
-            return false;
-        }
 
+            if (!blockState.isIn(BlockTags.LOGS)) {
+                return false;
+            }
+
+            // Check for water around the targeted log.
+            if (world.getBlockState(pos.east()).getFluidState().isIn(FluidTags.WATER) ||
+                    world.getBlockState(pos.west()).getFluidState().isIn(FluidTags.WATER) ||
+                    world.getBlockState(pos.north()).getFluidState().isIn(FluidTags.WATER) ||
+                    world.getBlockState(pos.south()).getFluidState().isIn(FluidTags.WATER)) {
+                return false;
+            }
+            // Ensure it's the second log by checking there's a log below, and NOT a log above.
+            return world.getBlockState(pos.down()).isIn(BlockTags.LOGS);
+        }
+        @Override
+        public boolean canStop() {
+            return this.timer >= EATING_TIME;
+        }
         @Override
         public void tick() {
+            super.tick();
+            ServerWorld world = (ServerWorld) beaver.getWorld();
             if (this.hasReached()) {
-                if (this.timer >= 10) {
-                    Beaver.this.playSound(SoundEvents.ENTITY_GENERIC_EAT, 1.0f, 1.0f);
-                    this.eatWood();
+                if (this.timer < EATING_TIME) {
+                    this.beaver.startEatingTree();
+                    if (this.timer % 5 == 0) { // Play particle effect and sound every second
+                        Vec3d blockCenter = new Vec3d(this.targetPos.getX() + 0.5, this.targetPos.getY() + 0.5, this.targetPos.getZ() + 0.5);
+                        Vec3d beaverPos = new Vec3d(beaver.getX(), beaver.getY(), beaver.getZ());
+
+                        Vec3d direction = blockCenter.subtract(beaverPos).normalize();
+
+                        // Adjust the spawn position to be on the side of the block facing the beaver
+                        double spawnX = blockCenter.x + direction.x * 0.5;
+                        double spawnY = blockCenter.y + direction.y * 0.5;
+                        double spawnZ = blockCenter.z + direction.z * 0.5;
+
+                        world.spawnParticles(new BlockStateParticleEffect(ParticleTypes.BLOCK, this.beaver.world.getBlockState(this.targetPos)),
+                                spawnX, spawnY, spawnZ, 200,
+                                0.0D, 0.0D, 0.0D, 2.0D);
+                        this.beaver.playSound(SoundEvents.ENTITY_GENERIC_EAT, .4f, 1.5f);
+                    }
+                    this.timer++;
                 } else {
-                    ++this.timer;
+                    this.eatWood();
+                    this.beaver.stopEatingTree();
+                    timer = 0; // Reset the timer for the next log
                 }
             }
-            super.tick();
         }
 
         protected void eatWood() {
-            if (!Beaver.this.world.getGameRules().getBoolean(GameRules.DO_MOB_GRIEFING)) {
+            if (!this.beaver.world.getGameRules().getBoolean(GameRules.DO_MOB_GRIEFING)) {
                 return;
             }
-            BlockState blockState = Beaver.this.world.getBlockState(this.targetPos);
-            if (blockState.isOf(Blocks.OAK_LOG)) {
+            BlockState blockState = this.beaver.world.getBlockState(this.targetPos);
+            if (isLog(blockState)) {
+                // Add logs to a list starting from the targetPos and moving upward
+                List<BlockPos> logs = new ArrayList<>();
+                BlockPos current = this.targetPos;
+                while (isLog(this.beaver.world.getBlockState(current))) {
+                    logs.add(current);
+                    current = current.up();
+                }
+
+                // Consume the first log in the list
                 this.eatLog(blockState);
+
+                // Remove the target position from logs list, so we don't reprocess it
+                logs.remove(this.targetPos);
+
+                // Reposition the remaining logs
+                repositionLog(logs);
+
             }
         }
 
         private void eatLog(BlockState state) {
-            ItemStack itemStack = Beaver.this.getEquippedStack(EquipmentSlot.MAINHAND);
-            if (itemStack.isEmpty()) {
-                Beaver.this.equipStack(EquipmentSlot.MAINHAND, new ItemStack(Beaver.this.world.getBlockState(this.targetPos).getBlock()));
+            World world = this.beaver.world;
+            this.beaver.equipStack(EquipmentSlot.MAINHAND, new ItemStack(state.getBlock()));
+            this.beaver.playSound(SoundEvents.BLOCK_WOOD_BREAK, 1.0f, 1.0f);
+            this.beaver.setCarriedBlock(state);
+            world.breakBlock(this.targetPos, false);
+        }
+
+        private void repositionLog(List<BlockPos> logs) {
+            World world = this.beaver.world;
+            for (BlockPos logPos : logs) {
+                BlockState logState = world.getBlockState(logPos);
+
+                // Calculate horizontal offset based on the height difference from the target block
+                int offset = logPos.getY() - this.targetPos.getY();
+
+                // Adjust the position based on the offset
+                BlockPos newPos = this.targetPos.add(offset + 1, -1, 0);
+                while (!world.getBlockState(newPos).isAir() && world.getBlockState(newPos).isOpaque()) {
+                    newPos = newPos.up();
+                }
+                while (world.getBlockState(newPos.down()).isAir() || !world.getBlockState(newPos.down()).isOpaque()) {
+                    newPos = newPos.down();
+                }
+                world.setBlockState(newPos, getSidewaysLogState(logState), 3);
+                world.removeBlock(logPos, false);
             }
-            Beaver.this.playSound(SoundEvents.BLOCK_WOOD_BREAK, 1.0f, 1.0f);
-            Beaver.this.setCarriedBlock(Beaver.this.world.getBlockState(this.targetPos));
-            Beaver.this.world.breakBlock(this.targetPos, false);
         }
 
         @Override
         public boolean canStart() {
-            super.canStart();
-            ItemStack itemStack = Beaver.this.getEquippedStack(EquipmentSlot.MAINHAND);
+            if (!super.canStart()) {
+                return false; // Return false if the superclass's canStart method returns false
+            }
+            ItemStack itemStack = this.beaver.getEquippedStack(EquipmentSlot.MAINHAND);
             return itemStack.isEmpty();
         }
+
 
         @Override
         public void start() {
