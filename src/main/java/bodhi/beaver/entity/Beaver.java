@@ -206,24 +206,49 @@ public class Beaver extends AnimalEntity implements GeoEntity {
 
     @Override
     public void tickMovement() {
-        if (!this.world.isClient && this.isAlive() && this.canMoveVoluntarily()) {
+        if (!this.getWorld().isClient && this.isAlive() && this.canMoveVoluntarily()) {
             ++this.eatingTime;
             ItemStack itemStack = this.getEquippedStack(EquipmentSlot.MAINHAND);
             if (this.canEat(itemStack)) {
                 if (this.eatingTime > 600) {
-                    ItemStack itemStack2 = itemStack.finishUsing(this.world, this);
+                    // Handle the eating process for normal food
+                    ItemStack itemStack2 = itemStack.finishUsing(this.getWorld(), this);
                     if (!itemStack2.isEmpty()) {
                         this.equipStack(EquipmentSlot.MAINHAND, itemStack2);
                     }
                     this.eatingTime = 0;
                 } else if (this.eatingTime > 560 && this.random.nextFloat() < 0.1f) {
-                    this.playSound(this.getEatSound(itemStack), 1.0f, 1.0f);
-                    this.world.sendEntityStatus(this, EntityStatuses.CREATE_EATING_PARTICLES);
+                    this.playSound(this.getEatSound(itemStack), .7f, 2.5f);
+                    this.getWorld().sendEntityStatus(this, EntityStatuses.CREATE_EATING_PARTICLES);
+                }
+            } else if (itemStack.getItem() == Items.STICK) {
+                // Consume the stick
+                if (!this.getWorld().isClient) {
+                    itemStack.decrement(1);
+                    this.playSound(this.getEatSound(Items.CARROT.getDefaultStack()), .7f, 2.5f);
+                    this.eatingTime = 0;
+                }
+            } else if (itemStack.isIn(ItemTags.SAPLINGS)) {
+                if (this.getWorld().getBlockState(this.getBlockPos().down()).isOpaque()) {
+                    BlockState blockState = this.getCarriedBlock();
+                    if (blockState == null) {
+                        return;
+                    }
+                    World world = this.getWorld();
+                    boolean blockPlaced = world.setBlockState(this.getBlockPos(), blockState, Block.NOTIFY_ALL);
+                    if (blockPlaced) {
+                        world.emitGameEvent(GameEvent.BLOCK_PLACE, this.getBlockPos(), GameEvent.Emitter.of(this, blockState));
+                        this.setCarriedBlock(null);
+                        if (blockState.getBlock().asItem() == itemStack.getItem()) {
+                            itemStack.decrement(1);
+                        }
+                    }
                 }
             }
         }
         super.tickMovement();
     }
+
     void addTrustedUuid(@Nullable UUID uuid) {
         if (this.dataTracker.get(OWNER).isPresent()) {
             this.dataTracker.set(OTHER_TRUSTED, Optional.ofNullable(uuid));
