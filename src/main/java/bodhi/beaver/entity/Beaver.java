@@ -147,7 +147,7 @@ public class Beaver extends AnimalEntity implements GeoEntity {
             }
 
             // Create bubbles.
-            beaver.world.addParticle(ParticleTypes.BUBBLE, beaver.getX(), beaver.getY(), beaver.getZ(), 0.1, .3, 0.1);
+            beaver.getWorld().addParticle(ParticleTypes.BUBBLE, beaver.getX(), beaver.getY(), beaver.getZ(), 0.1, .3, 0.1);
         }
     }
     @Override
@@ -306,11 +306,11 @@ public class Beaver extends AnimalEntity implements GeoEntity {
             double targetY = beaver.getY() + random.nextDouble() * 6 - 3;
 
             BlockPos targetPos = new BlockPos((int) targetX, (int) targetY, (int) targetZ);
-            while (!beaver.world.getBlockState(targetPos).getFluidState().isIn(FluidTags.WATER) && targetPos.getY() > 1) {
+            while (!beaver.getWorld().getBlockState(targetPos).getFluidState().isIn(FluidTags.WATER) && targetPos.getY() > 1) {
                 targetPos = targetPos.down();
             }
 
-            return beaver.world.getBlockState(targetPos).getFluidState().isIn(FluidTags.WATER) ? new Vec3d(targetX, targetY, targetZ) : null;
+            return beaver.getWorld().getBlockState(targetPos).getFluidState().isIn(FluidTags.WATER) ? new Vec3d(targetX, targetY, targetZ) : null;
         }
     }
 
@@ -361,8 +361,8 @@ public class Beaver extends AnimalEntity implements GeoEntity {
     }
 
     private void dropItem(ItemStack stack) {
-        ItemEntity itemEntity = new ItemEntity(this.world, this.getX(), this.getY(), this.getZ(), stack);
-        this.world.spawnEntity(itemEntity);
+        ItemEntity itemEntity = new ItemEntity(this.getWorld(), this.getX(), this.getY(), this.getZ(), stack);
+        this.getWorld().spawnEntity(itemEntity);
     }
 
     @Override
@@ -393,7 +393,7 @@ public class Beaver extends AnimalEntity implements GeoEntity {
             if (!itemStack.isEmpty()) {
                 for (int i = 0; i < 8; ++i) {
                     Vec3d vec3d = new Vec3d(((double)this.random.nextFloat() - 0.5) * 0.1, Math.random() * 0.1 + 0.1, 0.0).rotateX(-this.getPitch() * ((float)Math.PI / 180)).rotateY(-this.getYaw() * ((float)Math.PI / 180));
-                    this.world.addParticle(new ItemStackParticleEffect(ParticleTypes.ITEM, itemStack), this.getX() + this.getRotationVector().x / 2.0, this.getY(), this.getZ() + this.getRotationVector().z / 2.0, vec3d.x, vec3d.y + 0.05, vec3d.z);
+                    this.getWorld().addParticle(new ItemStackParticleEffect(ParticleTypes.ITEM, itemStack), this.getX() + this.getRotationVector().x / 2.0, this.getY(), this.getZ() + this.getRotationVector().z / 2.0, vec3d.x, vec3d.y + 0.05, vec3d.z);
                 }
             }
         } else {
@@ -414,7 +414,7 @@ public class Beaver extends AnimalEntity implements GeoEntity {
         return equipmentSlot == EquipmentSlot.MAINHAND && super.canEquip(stack);
     }
     private boolean canEat(ItemStack stack) {
-        return stack.getItem().isFood() && this.getTarget() == null && this.onGround && !this.isSleeping();
+        return stack.getItem().isFood() && this.getTarget() == null && this.isOnGround() && !this.isSleeping();
     }
 
     List<UUID> getTrustedUuids() {
@@ -476,13 +476,13 @@ public class Beaver extends AnimalEntity implements GeoEntity {
             if (this.beaver.getRandom().nextInt(Beaver.PickupItemGoal.toGoalTicks(10)) != 0) {
                 return false;
             }
-            List<ItemEntity> list = this.beaver.world.getEntitiesByClass(ItemEntity.class, this.beaver.getBoundingBox().expand(8.0, 8.0, 8.0), PICKABLE_DROP_FILTER);
+            List<ItemEntity> list = this.beaver.getWorld().getEntitiesByClass(ItemEntity.class, this.beaver.getBoundingBox().expand(8.0, 8.0, 8.0), PICKABLE_DROP_FILTER);
             return !list.isEmpty() && this.beaver.getEquippedStack(EquipmentSlot.MAINHAND).isEmpty();
         }
 
         @Override
         public void tick() {
-            List<ItemEntity> list = this.beaver.world.getEntitiesByClass(ItemEntity.class, this.beaver.getBoundingBox().expand(8.0, 8.0, 8.0), PICKABLE_DROP_FILTER);
+            List<ItemEntity> list = this.beaver.getWorld().getEntitiesByClass(ItemEntity.class, this.beaver.getBoundingBox().expand(8.0, 8.0, 8.0), PICKABLE_DROP_FILTER);
             ItemStack itemStack = this.beaver.getEquippedStack(EquipmentSlot.MAINHAND);
             if (itemStack.isEmpty() && !list.isEmpty()) {
                 this.beaver.getNavigation().startMovingTo(list.get(0), .6f);
@@ -491,7 +491,7 @@ public class Beaver extends AnimalEntity implements GeoEntity {
 
         @Override
         public void start() {
-            List<ItemEntity> list = this.beaver.world.getEntitiesByClass(ItemEntity.class, this.beaver.getBoundingBox().expand(8.0, 8.0, 8.0), PICKABLE_DROP_FILTER);
+            List<ItemEntity> list = this.beaver.getWorld().getEntitiesByClass(ItemEntity.class, this.beaver.getBoundingBox().expand(8.0, 8.0, 8.0), PICKABLE_DROP_FILTER);
             if (!list.isEmpty()) {
                 this.beaver.getNavigation().startMovingTo(list.get(0), .6f);
             }
@@ -585,7 +585,7 @@ public class Beaver extends AnimalEntity implements GeoEntity {
                 if (blockState == null) {
                     return;
                 }
-                World world = this.beaver.world;
+                World world = this.beaver.getWorld();
                 boolean blockPlaced = world.setBlockState(targetPos, blockState, Block.NOTIFY_ALL);
                 if(blockPlaced){
                     world.emitGameEvent(GameEvent.BLOCK_PLACE, targetPos, GameEvent.Emitter.of(this.beaver, blockState));
@@ -697,7 +697,7 @@ public class Beaver extends AnimalEntity implements GeoEntity {
         @Override
         public boolean shouldContinue() {
             // If the target block is no longer a log, stop.
-            if (!isLog(beaver.world.getBlockState(this.targetPos))) {
+            if (!isLog(beaver.getWorld().getBlockState(this.targetPos))) {
                 return false;
             }
 
@@ -727,7 +727,7 @@ public class Beaver extends AnimalEntity implements GeoEntity {
                         double spawnY = blockCenter.y + direction.y * 0.5;
                         double spawnZ = blockCenter.z + direction.z * 0.5;
 
-                        world.spawnParticles(new BlockStateParticleEffect(ParticleTypes.BLOCK, this.beaver.world.getBlockState(this.targetPos)),
+                        world.spawnParticles(new BlockStateParticleEffect(ParticleTypes.BLOCK, this.beaver.getWorld().getBlockState(this.targetPos)),
                                 spawnX, spawnY, spawnZ, 200,
                                 0.0D, 0.0D, 0.0D, 2.0D);
 
@@ -743,9 +743,9 @@ public class Beaver extends AnimalEntity implements GeoEntity {
         }
 
         private void pickUpLog() {
-            BlockState state = this.beaver.world.getBlockState(this.targetPos);
+            BlockState state = this.beaver.getWorld().getBlockState(this.targetPos);
             if (isLog(state) && isSidewaysLog(state)) {
-                World world = this.beaver.world;
+                World world = this.beaver.getWorld();
                 this.beaver.equipStack(EquipmentSlot.MAINHAND, new ItemStack(state.getBlock()));
                 this.beaver.playSound(SoundEvents.BLOCK_WOOD_BREAK, 1.0f, 1.0f);
                 this.beaver.setCarriedBlock(state);
@@ -771,7 +771,7 @@ public class Beaver extends AnimalEntity implements GeoEntity {
         @Override
         public boolean shouldContinue() {
             // If the target block is no longer a log, stop.
-            if (!isLog(beaver.world.getBlockState(this.targetPos))) {
+            if (!isLog(beaver.getWorld().getBlockState(this.targetPos))) {
                 return false;
             }
 
@@ -827,7 +827,7 @@ public class Beaver extends AnimalEntity implements GeoEntity {
                         double spawnY = blockCenter.y + direction.y * 0.5;
                         double spawnZ = blockCenter.z + direction.z * 0.5;
 
-                        world.spawnParticles(new BlockStateParticleEffect(ParticleTypes.BLOCK, this.beaver.world.getBlockState(this.targetPos)),
+                        world.spawnParticles(new BlockStateParticleEffect(ParticleTypes.BLOCK, this.beaver.getWorld().getBlockState(this.targetPos)),
                                 spawnX, spawnY, spawnZ, 200,
                                 0.0D, 0.0D, 0.0D, 2.0D);
                         this.beaver.playSound(SoundEvents.ENTITY_GENERIC_EAT, .4f, 1.5f);
@@ -842,15 +842,15 @@ public class Beaver extends AnimalEntity implements GeoEntity {
         }
 
         protected void eatWood() {
-            if (!this.beaver.world.getGameRules().getBoolean(GameRules.DO_MOB_GRIEFING)) {
+            if (!this.beaver.getWorld().getGameRules().getBoolean(GameRules.DO_MOB_GRIEFING)) {
                 return;
             }
-            BlockState blockState = this.beaver.world.getBlockState(this.targetPos);
+            BlockState blockState = this.beaver.getWorld().getBlockState(this.targetPos);
             if (isLog(blockState)) {
                 // Add logs to a list starting from the targetPos and moving upward
                 List<BlockPos> logs = new ArrayList<>();
                 BlockPos current = this.targetPos;
-                while (isLog(this.beaver.world.getBlockState(current))) {
+                while (isLog(this.beaver.getWorld().getBlockState(current))) {
                     logs.add(current);
                     current = current.up();
                 }
@@ -868,7 +868,7 @@ public class Beaver extends AnimalEntity implements GeoEntity {
         }
 
         private void eatLog(BlockState state) {
-            World world = this.beaver.world;
+            World world = this.beaver.getWorld();
             this.beaver.equipStack(EquipmentSlot.MAINHAND, new ItemStack(state.getBlock()));
             this.beaver.playSound(SoundEvents.BLOCK_WOOD_BREAK, 1.0f, 1.0f);
             this.beaver.setCarriedBlock(state);
@@ -876,7 +876,7 @@ public class Beaver extends AnimalEntity implements GeoEntity {
         }
 
         private void repositionLog(List<BlockPos> logs) {
-            World world = this.beaver.world;
+            World world = this.beaver.getWorld();
             for (BlockPos logPos : logs) {
                 BlockState logState = world.getBlockState(logPos);
 
