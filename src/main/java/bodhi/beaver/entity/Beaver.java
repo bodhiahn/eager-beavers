@@ -1,7 +1,7 @@
 package bodhi.beaver.entity;
 
+import bodhi.beaver.BeaverMod;
 import bodhi.beaver.entity.client.ModEntities;
-import bodhi.beaver.sound.ModSounds;
 import com.google.common.collect.Lists;
 import net.minecraft.advancement.criterion.Criteria;
 import net.minecraft.block.Block;
@@ -39,6 +39,7 @@ import net.minecraft.server.world.ServerWorld;
 import net.minecraft.sound.SoundEvent;
 import net.minecraft.sound.SoundEvents;
 import net.minecraft.stat.Stats;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
@@ -73,10 +74,18 @@ public class Beaver extends AnimalEntity implements GeoEntity {
     protected static final RawAnimation WALK_ANIM = RawAnimation.begin().thenLoop("animation.beaver.walk");
     protected static final RawAnimation IDLE_ANIM = RawAnimation.begin().thenLoop("animation.beaver.idle");
     protected static final RawAnimation SWIM_ANIM = RawAnimation.begin().thenLoop("animation.beaver.swim");
+    private boolean isHat = false;
 
     public Beaver(EntityType<? extends AnimalEntity> entityType, World world) {
         super(entityType, world);
         this.setCanPickUpLoot(true);
+    }
+
+    public boolean isHat() {
+        return isHat;
+    }
+    public void setHat() {
+        isHat = true;
     }
     @Override
     public boolean isPushedByFluids() {
@@ -87,6 +96,11 @@ public class Beaver extends AnimalEntity implements GeoEntity {
                 .add(EntityAttributes.GENERIC_MAX_HEALTH, 20.0D)
                 .add(EntityAttributes.GENERIC_KNOCKBACK_RESISTANCE, 20)
                 .add(EntityAttributes.GENERIC_MOVEMENT_SPEED, 0.4f);
+    }
+
+    @Override
+    protected Identifier getLootTableId() {
+        return new Identifier("beavermod", "entities/beaver");
     }
 
     private boolean isEatingTree = false;
@@ -160,14 +174,15 @@ public class Beaver extends AnimalEntity implements GeoEntity {
         controllers.add(genericWalkIdleController(this));
         controllers.add(swimController(this));
         controllers.add(eatingController(this));
+        controllers.add(hatController(this));
     }
 
     public static <T extends GeoAnimatable> AnimationController<Beaver> genericWalkIdleController(Beaver entity) {
         return new AnimationController<Beaver>(entity, "Walk/Idle", 0, state -> {
             boolean isHoldingItem = !entity.getEquippedStack(EquipmentSlot.MAINHAND).isEmpty();
             boolean isSwimming = entity.isTouchingWater();
-
-            if (!isSwimming) {
+            boolean isHat = entity.isHat();
+            if (!isSwimming && !isHat) {
                 if (state.isMoving()) {
                     return state.setAndContinue(isHoldingItem ? HOLD_WALK_ANIM : WALK_ANIM);
                 } else {
@@ -177,9 +192,21 @@ public class Beaver extends AnimalEntity implements GeoEntity {
             return PlayState.STOP;
         });
     }
+
+    public static <T extends GeoAnimatable> AnimationController<Beaver> hatController(Beaver entity) {
+        return new AnimationController<Beaver>(entity, "Hat", 0, state -> {
+            boolean isHat = entity.isHat();
+            if (isHat){
+                return PlayState.CONTINUE;
+            }
+            return PlayState.STOP;
+        });
+    }
+
     public static <T extends GeoAnimatable> AnimationController<Beaver> swimController(Beaver beaver) {
         return new AnimationController<Beaver>(beaver, "Swim", 0, state -> {
-            if (beaver.isTouchingWater())
+            boolean isHat = beaver.isHat();
+            if (beaver.isTouchingWater() && !isHat)
                 return state.setAndContinue(SWIM_ANIM);
             return PlayState.STOP;
             });
@@ -525,7 +552,7 @@ public class Beaver extends AnimalEntity implements GeoEntity {
 
     @Override
     protected SoundEvent getAmbientSound() {
-        return ModSounds.BEAVER_AMBIENT;
+        return BeaverMod.BEAVER_AMBIENT;
     }
 
     @Override
@@ -536,10 +563,10 @@ public class Beaver extends AnimalEntity implements GeoEntity {
     @Override
     public void playAmbientSound() {
         if (isBaby()) {
-            this.playSound(getAmbientSound(), 0.3f, getSoundPitch());
+            this.playSound(getAmbientSound(), 0.12f, getSoundPitch());
             return;
         }
-        this.playSound(getAmbientSound(), 0.10f, getSoundPitch());
+        this.playSound(getAmbientSound(), 0.07f, getSoundPitch());
     }
 
     @Override

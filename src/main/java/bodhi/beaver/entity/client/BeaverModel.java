@@ -1,6 +1,6 @@
 package bodhi.beaver.entity.client;
 
-import bodhi.beaver.EntityTesting;
+import bodhi.beaver.BeaverMod;
 import bodhi.beaver.entity.Beaver;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -16,17 +16,17 @@ import software.bernie.geckolib.model.data.EntityModelData;
 public class BeaverModel extends GeoModel<Beaver> {
     @Override
     public Identifier getModelResource(Beaver animatable) {
-        return new Identifier(EntityTesting.MOD_ID, "geo/beaver.geo.json");
+        return new Identifier(BeaverMod.MOD_ID, "geo/beaver.geo.json");
     }
 
     @Override
     public Identifier getTextureResource(Beaver animatable) {
-        return new Identifier(EntityTesting.MOD_ID, "textures/beavertexture.png");
+        return new Identifier(BeaverMod.MOD_ID, "textures/beavertexture.png");
     }
 
     @Override
     public Identifier getAnimationResource(Beaver animatable) {
-        return new Identifier(EntityTesting.MOD_ID, "animations/beaver.animation.json");
+        return new Identifier(BeaverMod.MOD_ID, "animations/beaver.animation.json");
     }
 
     @Override

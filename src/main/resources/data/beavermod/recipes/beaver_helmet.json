@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "BBB",
+    "B B",
+    "   "
+  ],
+  "key": {
+    "B": {
+      "item": "beavermod:beaver_pelt"
+    }
+  },
+  "result": {
+    "item": "beavermod:beaver_helmet",
+    "count": 1
+  }
+}
