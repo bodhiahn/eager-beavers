@@ -13,7 +13,7 @@ import net.minecraft.world.biome.BiomeKeys;
 public class ModEntitySpawn {
     public static void addEntitySpawn() {
         BiomeModifications.addSpawn(BiomeSelectors.includeByKey(BiomeKeys.RIVER), SpawnGroup.AMBIENT,
-                ModEntities.BEAVER, 200, 3, 10);
+                ModEntities.BEAVER, 100, 1, 5);
         SpawnRestriction.register(ModEntities.BEAVER, SpawnRestriction.Location.ON_GROUND,
                 Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, AnimalEntity::canMobSpawn);
     }

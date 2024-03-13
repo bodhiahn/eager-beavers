@@ -37,29 +37,34 @@ public class BeaverTailModel extends FeatureRenderer<AbstractClientPlayerEntity,
         float interpolatedHeadYaw = MathHelper.lerp(tickDelta, entity.prevHeadYaw, entity.headYaw);
         float interpolatedHeadPitch = MathHelper.lerp(tickDelta, entity.prevPitch, entity.getPitch());
 
-        // Translate to neck position
-        matrices.translate(0.0F, 1.5F, 0.0F);
+        if (!entity.isInSwimmingPose())  {
+            // Translate to neck position
+            matrices.translate(0.0F, 1.5F, 0.0F);
+        }
 
         // Apply head rotation
         matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-interpolatedHeadYaw));
         matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(interpolatedHeadPitch));
 
-        // Translate back to original position
-        matrices.translate(0.0F, -1.5F, 0.0F);
-
+        if (entity.isInSwimmingPose()) {
+            matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(90.0f));
+            matrices.translate(0.0F, -0.2F, -1.5F);
+        } else {
+            matrices.translate(0.0F, -1.5F, 0.0F);
+        }
 
         matrices.translate(0.0f, 1.8f, -0.1f);
-        double d = MathHelper.lerp((double)tickDelta, entity.prevCapeX, entity.capeX) - MathHelper.lerp((double)tickDelta, entity.prevX, entity.getX());
-        double e = MathHelper.lerp((double)tickDelta, entity.prevCapeY, entity.capeY) - MathHelper.lerp((double)tickDelta, entity.prevY, entity.getY());
-        double m = MathHelper.lerp((double)tickDelta, entity.prevCapeZ, entity.capeZ) - MathHelper.lerp((double)tickDelta, entity.prevZ, entity.getZ());
+        double d = MathHelper.lerp((double) tickDelta, entity.prevCapeX, entity.capeX) - MathHelper.lerp((double) tickDelta, entity.prevX, entity.getX());
+        double e = MathHelper.lerp((double) tickDelta, entity.prevCapeY, entity.capeY) - MathHelper.lerp((double) tickDelta, entity.prevY, entity.getY());
+        double m = MathHelper.lerp((double) tickDelta, entity.prevCapeZ, entity.capeZ) - MathHelper.lerp((double) tickDelta, entity.prevZ, entity.getZ());
         float n = MathHelper.lerpAngleDegrees(tickDelta, entity.prevHeadYaw, entity.headYaw);
-        double o = MathHelper.sin(n * ((float)Math.PI / 180));
-        double p = -MathHelper.cos(n * ((float)Math.PI / 180));
-        float q = (float)e * 10.0f;
+        double o = MathHelper.sin(n * ((float) Math.PI / 180));
+        double p = -MathHelper.cos(n * ((float) Math.PI / 180));
+        float q = (float) e * 10.0f;
         q = MathHelper.clamp(q, -6.0f, 32.0f);
-        float r = (float)(d * o + m * p) * 100.0f;
+        float r = (float) (d * o + m * p) * 100.0f;
         r = MathHelper.clamp(r, 0.0f, 150.0f);
-        float s = (float)(d * p - m * o) * 100.0f;
+        float s = (float) (d * p - m * o) * 100.0f;
         s = MathHelper.clamp(s, -20.0f, 20.0f);
         if (r < 0.0f) {
             r = 0.0f;
@@ -73,10 +78,11 @@ public class BeaverTailModel extends FeatureRenderer<AbstractClientPlayerEntity,
         matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees(s / 2.0f));
         matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(180.0f - s / 2.0f));
         matrices.translate(0.0f, -1.8f, 0.1f);
+
         if (entity.isInSneakingPose()) {
             matrices.translate(0.0f, 1.2f, -.18f);
         } else if (entity.isInSwimmingPose()){
-            matrices.translate(0f, 0f, .1f);
+            //matrices.translate(0.0f, 2.2f, 0.25f); // Adjust for swimming position
         }else {
             matrices.translate(0.0f, 1.45f, -.18f);
         }
