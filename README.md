@@ -1,2 +1,0 @@
-# eager-beavers
-Beavers
