@@ -3,6 +3,16 @@ package bodhi.beaver.entity;
 import bodhi.beaver.BeaverMod;
 import bodhi.beaver.entity.client.ModEntities;
 import com.google.common.collect.Lists;
+import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.server.WorldLoader;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.tags.FluidTags;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.AgeableMob;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import software.bernie.geckolib.animatable.GeoEntity;
 import software.bernie.geckolib.core.animatable.GeoAnimatable;
@@ -12,18 +22,28 @@ import software.bernie.geckolib.core.animation.AnimationController;
 import software.bernie.geckolib.core.animation.RawAnimation;
 import software.bernie.geckolib.core.object.PlayState;
 import software.bernie.geckolib.util.GeckoLibUtil;
-
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.animal.Animal;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.crafting.Ingredient;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.Level;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
 
 import java.util.*;
 import java.util.function.Predicate;
 
 
-public class Beaver extends AnimalEntity implements GeoEntity {
-    private static final Ingredient BREEDING_INGREDIENT = Ingredient.ofItems(Items.OAK_WOOD, Items.BIRCH_WOOD, Items.DARK_OAK_WOOD, Items.SPRUCE_SAPLING);
-    private static final TrackedData<Optional<UUID>> OWNER = DataTracker.registerData(Beaver.class, TrackedDataHandlerRegistry.OPTIONAL_UUID);
-    private static final TrackedData<Optional<UUID>> OTHER_TRUSTED = DataTracker.registerData(Beaver.class, TrackedDataHandlerRegistry.OPTIONAL_UUID);
-    private static final TrackedData<Optional<BlockState>> CARRIED_BLOCK = DataTracker.registerData(Beaver.class, TrackedDataHandlerRegistry.OPTIONAL_BLOCK_STATE);
-    static final Predicate<ItemEntity> PICKABLE_DROP_FILTER = item -> !item.cannotPickup() && item.isAlive();
+public class Beaver extends Animal implements GeoEntity {
+    private static final Ingredient BREEDING_INGREDIENT = Ingredient.of(Items.OAK_WOOD, Items.BIRCH_WOOD, Items.DARK_OAK_WOOD, Items.SPRUCE_SAPLING);
+    private static final EntityDataAccessor<Optional<UUID>> OWNER = SynchedEntityData.defineId(Beaver.class, TrackedDataHandlerRegistry.OPTIONAL_UUID);
+    private static final EntityDataAccessor<Optional<UUID>> OTHER_TRUSTED = SynchedEntityData.defineId(Beaver.class, TrackedDataHandlerRegistry.OPTIONAL_UUID);
+    private static final EntityDataAccessor<Optional<BlockState>> CARRIED_BLOCK = SynchedEntityData.defineId(Beaver.class, TrackedDataHandlerRegistry.OPTIONAL_BLOCK_STATE);
+    static final Predicate<ItemEntity> PICKABLE_DROP_FILTER = item -> !item.isPickable() && item.isAlive();
     private int eatingTime;
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
 
@@ -34,7 +54,7 @@ public class Beaver extends AnimalEntity implements GeoEntity {
     protected static final RawAnimation SWIM_ANIM = RawAnimation.begin().thenLoop("animation.beaver.swim");
     private boolean isHat = false;
 
-    public Beaver(EntityType<? extends AnimalEntity> entityType, World world) {
+    public Beaver(EntityType<? extends Animal> entityType, Level world) {
         super(entityType, world);
         this.setCanPickUpLoot(true);
     }
@@ -44,21 +64,6 @@ public class Beaver extends AnimalEntity implements GeoEntity {
     }
     public void setHat() {
         isHat = true;
-    }
-    @Override
-    public boolean isPushedByFluids() {
-        return false;
-    }
-    public static DefaultAttributeContainer.Builder setAttributes() {
-        return AnimalEntity.createMobAttributes()
-                .add(EntityAttributes.GENERIC_MAX_HEALTH, 20.0D)
-                .add(EntityAttributes.GENERIC_KNOCKBACK_RESISTANCE, 20)
-                .add(EntityAttributes.GENERIC_MOVEMENT_SPEED, 0.4f);
-    }
-
-    @Override
-    protected Identifier getLootTableId() {
-        return new Identifier("beavermod", "entities/beaver");
     }
 
     private boolean isEatingTree = false;
@@ -75,6 +80,12 @@ public class Beaver extends AnimalEntity implements GeoEntity {
         return this.isEatingTree;
     }
 
+    @Nullable
+    @Override
+    public AgeableMob getBreedOffspring(ServerLevel p_146743_, AgeableMob p_146744_) {
+        return null;
+    }
+
     public class BeaverSwimGoal extends Goal {
         private final Beaver beaver;
         private final double swimSpeed;
@@ -86,12 +97,12 @@ public class Beaver extends AnimalEntity implements GeoEntity {
             this.swimSpeed = 1.5; // Adjust as needed
             this.diveFrequency = 80; // Every 80 ticks on average, adjust as needed.
             this.diveTimer = 0;
-            this.setControls(EnumSet.of(Goal.Control.JUMP, Goal.Control.MOVE));
-            beaver.getNavigation().setCanSwim(true);
+            this.setFlags(EnumSet.of(Goal.Flag.JUMP, Goal.Flag.MOVE));
+            beaver.getNavigation().setCanFloat(true);
         }
 
         @Override
-        public boolean canStart() {
+        public boolean canUse() {
             return beaver.isTouchingWater() && beaver.getFluidHeight(FluidTags.WATER) > (beaver.isBaby() ? 0.1D : 0.2D) || beaver.isInLava();
         }
 
@@ -103,8 +114,8 @@ public class Beaver extends AnimalEntity implements GeoEntity {
             }
             if (diveTimer > 0) {
                 // When diveTimer is active, move beaver downwards.
-                Vec3d motion = beaver.getVelocity();
-                beaver.setVelocity(motion.x, -0.03, motion.z); // Adjust -0.3 for faster or slower dives.
+                Vec3 motion = beaver.getDeltaMovement();
+                beaver.setDeltaMovement(motion.x, -0.03, motion.z); // Adjust -0.3 for faster or slower dives.
                 diveTimer--;
             } else {
                 // Usual swim behavior.
@@ -114,14 +125,19 @@ public class Beaver extends AnimalEntity implements GeoEntity {
             }
 
             // Adjust the beaver's speed while swimming.
-            if (beaver.isInsideWaterOrBubbleColumn()) {
-                beaver.setMovementSpeed((float) swimSpeed);
+            if (beaver.isInLiquid()) {
+                beaver.setSpeed((float) swimSpeed);
             }
 
             // Create bubbles.
-            beaver.getWorld().addParticle(ParticleTypes.BUBBLE, beaver.getX(), beaver.getY(), beaver.getZ(), 0.1, .3, 0.1);
+            beaver.level().addParticle(ParticleTypes.BUBBLE, beaver.getX(), beaver.getY(), beaver.getZ(), 0.1, .3, 0.1);
         }
     }
+
+    private boolean isTouchingWater() {
+        return this.wasTouchingWater;
+    }
+
     @Override
     public AnimatableInstanceCache getAnimatableInstanceCache() {
         return this.cache;
@@ -137,7 +153,7 @@ public class Beaver extends AnimalEntity implements GeoEntity {
 
     public static <T extends GeoAnimatable> AnimationController<Beaver> genericWalkIdleController(Beaver entity) {
         return new AnimationController<Beaver>(entity, "Walk/Idle", 0, state -> {
-            boolean isHoldingItem = !entity.getEquippedStack(EquipmentSlot.MAINHAND).isEmpty();
+            boolean isHoldingItem = !entity.getItemInHand(InteractionHand.MAIN_HAND).isEmpty();
             boolean isSwimming = entity.isTouchingWater();
             boolean isHat = entity.isHat();
             if (!isSwimming && !isHat) {
@@ -181,7 +197,7 @@ public class Beaver extends AnimalEntity implements GeoEntity {
 
 
     public void setCarriedBlock(@Nullable BlockState state) {
-        this.dataTracker.set(CARRIED_BLOCK, Optional.ofNullable(state));
+        this..set(CARRIED_BLOCK, Optional.ofNullable(state));
     }
 
     @Nullable
@@ -189,7 +205,6 @@ public class Beaver extends AnimalEntity implements GeoEntity {
         return this.dataTracker.get(CARRIED_BLOCK).orElse(null);
     }
 
-    @Override
     public void tickMovement() {
         if (!this.getWorld().isClient && this.isAlive() && this.canMoveVoluntarily()) {
             ++this.eatingTime;
