@@ -17,12 +17,10 @@ import net.minecraft.entity.data.TrackedDataHandlerRegistry;
 import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.entity.passive.AnimalEntity;
 import net.minecraft.entity.passive.PassiveEntity;
+import net.minecraft.entity.passive.TameableEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.fluid.Fluids;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
+import net.minecraft.item.*;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtElement;
 import net.minecraft.nbt.NbtHelper;
@@ -39,6 +37,9 @@ import net.minecraft.server.world.ServerWorld;
 import net.minecraft.sound.SoundEvent;
 import net.minecraft.sound.SoundEvents;
 import net.minecraft.stat.Stats;
+import net.minecraft.util.ActionResult;
+import net.minecraft.util.DyeColor;
+import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
@@ -60,10 +61,8 @@ import software.bernie.geckolib.util.GeckoLibUtil;
 import java.util.*;
 import java.util.function.Predicate;
 
-public class Beaver extends AnimalEntity implements GeoEntity {
+public class Beaver extends TameableEntity implements GeoEntity {
     private static final Ingredient BREEDING_INGREDIENT = Ingredient.ofItems(Items.OAK_WOOD, Items.BIRCH_WOOD, Items.DARK_OAK_WOOD, Items.SPRUCE_SAPLING);
-    private static final TrackedData<Optional<UUID>> OWNER = DataTracker.registerData(Beaver.class, TrackedDataHandlerRegistry.OPTIONAL_UUID);
-    private static final TrackedData<Optional<UUID>> OTHER_TRUSTED = DataTracker.registerData(Beaver.class, TrackedDataHandlerRegistry.OPTIONAL_UUID);
     private static final TrackedData<Optional<BlockState>> CARRIED_BLOCK = DataTracker.registerData(Beaver.class, TrackedDataHandlerRegistry.OPTIONAL_BLOCK_STATE);
     static final Predicate<ItemEntity> PICKABLE_DROP_FILTER = item -> !item.cannotPickup() && item.isAlive();
     private int eatingTime;
@@ -76,7 +75,7 @@ public class Beaver extends AnimalEntity implements GeoEntity {
     protected static final RawAnimation SWIM_ANIM = RawAnimation.begin().thenLoop("animation.beaver.swim");
     private boolean isHat = false;
 
-    public Beaver(EntityType<? extends AnimalEntity> entityType, World world) {
+    public Beaver(EntityType<? extends TameableEntity> entityType, World world) {
         super(entityType, world);
         this.setCanPickUpLoot(true);
     }
@@ -117,51 +116,61 @@ public class Beaver extends AnimalEntity implements GeoEntity {
         return this.isEatingTree;
     }
 
+    @Override
+    public EntityView method_48926() {
+        return this.getWorld();
+    }
+
+    @Nullable
+    @Override
+    public LivingEntity getOwner() {
+        return super.getOwner();
+    }
+
+
     public class BeaverSwimGoal extends Goal {
-        private final Beaver beaver;
         private final double swimSpeed;
         private final int diveFrequency; // How often the beaver decides to dive.
         private int diveTimer; // Timer to handle diving and surfacing.
 
-        public BeaverSwimGoal(Beaver beaver) {
-            this.beaver = beaver;
+        public BeaverSwimGoal() {
             this.swimSpeed = 1.5; // Adjust as needed
             this.diveFrequency = 80; // Every 80 ticks on average, adjust as needed.
             this.diveTimer = 0;
             this.setControls(EnumSet.of(Goal.Control.JUMP, Goal.Control.MOVE));
-            beaver.getNavigation().setCanSwim(true);
+            Beaver.this.getNavigation().setCanSwim(true);
         }
 
         @Override
         public boolean canStart() {
-            return beaver.isTouchingWater() && beaver.getFluidHeight(FluidTags.WATER) > (beaver.isBaby() ? 0.1D : 0.2D) || beaver.isInLava();
+            return Beaver.this.isTouchingWater() && Beaver.this.getFluidHeight(FluidTags.WATER) > (Beaver.this.isBaby() ? 0.1D : 0.2D) || Beaver.this.isInLava();
         }
 
         @Override
         public void tick() {
             // Randomly decide to dive or come up based on diveTimer.
-            if (diveTimer == 0 && beaver.getRandom().nextInt(diveFrequency) == 0) {
-                diveTimer = beaver.getRandom().nextInt(40) + 40; // Dive for 40 to 80 ticks.
+            if (diveTimer == 0 && Beaver.this.getRandom().nextInt(diveFrequency) == 0) {
+                diveTimer = Beaver.this.getRandom().nextInt(40) + 40; // Dive for 40 to 80 ticks.
             }
             if (diveTimer > 0) {
                 // When diveTimer is active, move beaver downwards.
-                Vec3d motion = beaver.getVelocity();
-                beaver.setVelocity(motion.x, -0.03, motion.z); // Adjust -0.3 for faster or slower dives.
+                Vec3d motion = Beaver.this.getVelocity();
+                Beaver.this.setVelocity(motion.x, -0.03, motion.z); // Adjust -0.3 for faster or slower dives.
                 diveTimer--;
             } else {
                 // Usual swim behavior.
-                if (beaver.getRandom().nextFloat() < 0.8F) {
-                    beaver.getJumpControl().setActive();
+                if (Beaver.this.getRandom().nextFloat() < 0.8F) {
+                    Beaver.this.getJumpControl().setActive();
                 }
             }
 
             // Adjust the beaver's speed while swimming.
-            if (beaver.isInsideWaterOrBubbleColumn()) {
-                beaver.setMovementSpeed((float) swimSpeed);
+            if (Beaver.this.isInsideWaterOrBubbleColumn()) {
+                Beaver.this.setMovementSpeed((float) swimSpeed);
             }
 
             // Create bubbles.
-            beaver.getWorld().addParticle(ParticleTypes.BUBBLE, beaver.getX(), beaver.getY(), beaver.getZ(), 0.1, .3, 0.1);
+            Beaver.this.getWorld().addParticle(ParticleTypes.BUBBLE, Beaver.this.getX(), Beaver.this.getY(), Beaver.this.getZ(), 0.1, .3, 0.1);
         }
     }
     @Override
@@ -171,17 +180,17 @@ public class Beaver extends AnimalEntity implements GeoEntity {
 
     @Override
     public void registerControllers(AnimatableManager.ControllerRegistrar controllers) {
-        controllers.add(genericWalkIdleController(this));
-        controllers.add(swimController(this));
-        controllers.add(eatingController(this));
-        controllers.add(hatController(this));
+        controllers.add(genericWalkIdleController());
+        controllers.add(swimController());
+        controllers.add(eatingController());
+        controllers.add(hatController());
     }
 
-    public static <T extends GeoAnimatable> AnimationController<Beaver> genericWalkIdleController(Beaver entity) {
-        return new AnimationController<Beaver>(entity, "Walk/Idle", 0, state -> {
-            boolean isHoldingItem = !entity.getEquippedStack(EquipmentSlot.MAINHAND).isEmpty();
-            boolean isSwimming = entity.isTouchingWater();
-            boolean isHat = entity.isHat();
+    private <T extends GeoAnimatable> AnimationController<Beaver> genericWalkIdleController() {
+        return new AnimationController<Beaver>(Beaver.this, "Walk/Idle", 0, state -> {
+            boolean isHoldingItem = !Beaver.this.getEquippedStack(EquipmentSlot.MAINHAND).isEmpty();
+            boolean isSwimming = Beaver.this.isTouchingWater();
+            boolean isHat = Beaver.this.isHat();
             if (!isSwimming && !isHat) {
                 if (state.isMoving()) {
                     return state.setAndContinue(isHoldingItem ? HOLD_WALK_ANIM : WALK_ANIM);
@@ -193,9 +202,9 @@ public class Beaver extends AnimalEntity implements GeoEntity {
         });
     }
 
-    public static <T extends GeoAnimatable> AnimationController<Beaver> hatController(Beaver entity) {
-        return new AnimationController<Beaver>(entity, "Hat", 0, state -> {
-            boolean isHat = entity.isHat();
+    private <T extends GeoAnimatable> AnimationController<Beaver> hatController() {
+        return new AnimationController<Beaver>(Beaver.this, "Hat", 0, state -> {
+            boolean isHat = Beaver.this.isHat();
             if (isHat){
                 return PlayState.CONTINUE;
             }
@@ -203,18 +212,18 @@ public class Beaver extends AnimalEntity implements GeoEntity {
         });
     }
 
-    public static <T extends GeoAnimatable> AnimationController<Beaver> swimController(Beaver beaver) {
-        return new AnimationController<Beaver>(beaver, "Swim", 0, state -> {
-            boolean isHat = beaver.isHat();
-            if (beaver.isTouchingWater() && !isHat)
+    private <T extends GeoAnimatable> AnimationController<Beaver> swimController() {
+        return new AnimationController<Beaver>(Beaver.this, "Swim", 0, state -> {
+            boolean isHat = Beaver.this.isHat();
+            if (Beaver.this.isTouchingWater() && !isHat)
                 return state.setAndContinue(SWIM_ANIM);
             return PlayState.STOP;
             });
     }
 
-    public static <T extends GeoAnimatable> AnimationController<Beaver> eatingController(Beaver beaver) {
-        return new AnimationController<Beaver>(beaver, "Eat", 0, state -> {
-            if (beaver.isEatingTree())
+    private <T extends GeoAnimatable> AnimationController<Beaver> eatingController() {
+        return new AnimationController<Beaver>(Beaver.this, "Eat", 0, state -> {
+            if (Beaver.this.isEatingTree())
                 return state.setAndContinue(HOLD_IDLE_ANIM);
             return PlayState.STOP;
         });
@@ -276,32 +285,23 @@ public class Beaver extends AnimalEntity implements GeoEntity {
         super.tickMovement();
     }
 
-    void addTrustedUuid(@Nullable UUID uuid) {
-        if (this.dataTracker.get(OWNER).isPresent()) {
-            this.dataTracker.set(OTHER_TRUSTED, Optional.ofNullable(uuid));
-        } else {
-            this.dataTracker.set(OWNER, Optional.ofNullable(uuid));
-        }
-    }
 
     public class WaterWanderGoal extends Goal {
-        private final Beaver beaver;
         private final double speed;
         private double targetX;
         private double targetY;
         private double targetZ;
 
-        public WaterWanderGoal(Beaver beaver, double speed) {
-            this.beaver = beaver;
+        public WaterWanderGoal(double speed) {
             this.speed = speed;
             setControls(EnumSet.of(Goal.Control.MOVE));
         }
 
         @Override
         public boolean canStart() {
-            if (beaver.isTouchingWater() && beaver.getNavigation().isIdle()) {
+            if (Beaver.this.isTouchingWater() && Beaver.this.getNavigation().isIdle()) {
                 // We'll generate a random destination in the water every few ticks
-                if (beaver.getRandom().nextInt(10) == 0) {
+                if (Beaver.this.getRandom().nextInt(10) == 0) {
                     Vec3d targetVec = this.generateWaterTarget();
                     if (targetVec != null) {
                         this.targetX = targetVec.x;
@@ -316,28 +316,28 @@ public class Beaver extends AnimalEntity implements GeoEntity {
 
         @Override
         public boolean shouldContinue() {
-            return !beaver.getNavigation().isIdle();
+            return !Beaver.this.getNavigation().isIdle();
         }
 
         @Override
         public void start() {
-            beaver.getNavigation().startMovingTo(targetX, targetY, targetZ, speed);
+            Beaver.this.getNavigation().startMovingTo(targetX, targetY, targetZ, speed);
         }
 
         private Vec3d generateWaterTarget() {
-            Random random = beaver.getRandom();
+            Random random = Beaver.this.getRandom();
             double angle = random.nextDouble() * 2 * Math.PI;
             double distance = 8 + random.nextDouble() * 8;
-            double targetX = beaver.getX() + Math.sin(angle) * distance;
-            double targetZ = beaver.getZ() + Math.cos(angle) * distance;
-            double targetY = beaver.getY() + random.nextDouble() * 6 - 3;
+            double targetX = Beaver.this.getX() + Math.sin(angle) * distance;
+            double targetZ = Beaver.this.getZ() + Math.cos(angle) * distance;
+            double targetY = Beaver.this.getY() + random.nextDouble() * 6 - 3;
 
             BlockPos targetPos = new BlockPos((int) targetX, (int) targetY, (int) targetZ);
-            while (!beaver.getWorld().getBlockState(targetPos).getFluidState().isIn(FluidTags.WATER) && targetPos.getY() > 1) {
+            while (!Beaver.this.getWorld().getBlockState(targetPos).getFluidState().isIn(FluidTags.WATER) && targetPos.getY() > 1) {
                 targetPos = targetPos.down();
             }
 
-            return beaver.getWorld().getBlockState(targetPos).getFluidState().isIn(FluidTags.WATER) ? new Vec3d(targetX, targetY, targetZ) : null;
+            return Beaver.this.getWorld().getBlockState(targetPos).getFluidState().isIn(FluidTags.WATER) ? new Vec3d(targetX, targetY, targetZ) : null;
         }
     }
 
@@ -353,36 +353,37 @@ public class Beaver extends AnimalEntity implements GeoEntity {
 
         @Override
         protected void breed() {
-            ServerWorld serverWorld = (ServerWorld)this.world;
-            Beaver beaver = (Beaver)this.animal.createChild(serverWorld, this.mate);
-            if (beaver == null) {
-                return;
-            }
-            ServerPlayerEntity serverPlayerEntity = this.animal.getLovingPlayer();
-            ServerPlayerEntity serverPlayerEntity2 = this.mate.getLovingPlayer();
-            ServerPlayerEntity serverPlayerEntity3 = serverPlayerEntity;
-            if (serverPlayerEntity != null) {
-                beaver.addTrustedUuid(serverPlayerEntity.getUuid());
-            } else {
-                serverPlayerEntity3 = serverPlayerEntity2;
-            }
-            if (serverPlayerEntity2 != null && serverPlayerEntity != serverPlayerEntity2) {
-                beaver.addTrustedUuid(serverPlayerEntity2.getUuid());
-            }
-            if (serverPlayerEntity3 != null) {
-                serverPlayerEntity3.incrementStat(Stats.ANIMALS_BRED);
-                Criteria.BRED_ANIMALS.trigger(serverPlayerEntity3, this.animal, this.mate, beaver);
-            }
-            this.animal.setBreedingAge(6000);
-            this.mate.setBreedingAge(6000);
-            this.animal.resetLoveTicks();
-            this.mate.resetLoveTicks();
-            beaver.setBreedingAge(-24000);
-            beaver.refreshPositionAndAngles(this.animal.getX(), this.animal.getY(), this.animal.getZ(), 0.0f, 0.0f);
-            serverWorld.spawnEntityAndPassengers(beaver);
-            this.world.sendEntityStatus(this.animal, EntityStatuses.ADD_BREEDING_PARTICLES);
-            if (this.world.getGameRules().getBoolean(GameRules.DO_MOB_LOOT)) {
-                this.world.spawnEntity(new ExperienceOrbEntity(this.world, this.animal.getX(), this.animal.getY(), this.animal.getZ(), this.animal.getRandom().nextInt(7) + 1));
+            ServerWorld serverWorld = (ServerWorld) this.world;
+            Beaver beaver = (Beaver) this.animal.createChild(serverWorld, this.mate);
+            if (beaver != null) {
+                ServerPlayerEntity serverPlayerEntity = this.animal.getLovingPlayer();
+                ServerPlayerEntity serverPlayerEntity2 = this.mate.getLovingPlayer();
+                ServerPlayerEntity serverPlayerEntity3 = serverPlayerEntity;
+                if (serverPlayerEntity != null) {
+                    beaver.setOwner(serverPlayerEntity);
+                    beaver.setTamed(true);
+                } else {
+                    serverPlayerEntity3 = serverPlayerEntity2;
+                }
+                if (serverPlayerEntity2 != null && serverPlayerEntity != serverPlayerEntity2) {
+                    beaver.setOwner(serverPlayerEntity2);
+                    beaver.setTamed(true);
+                }
+                if (serverPlayerEntity3 != null) {
+                    serverPlayerEntity3.incrementStat(Stats.ANIMALS_BRED);
+                    Criteria.BRED_ANIMALS.trigger(serverPlayerEntity3, this.animal, this.mate, beaver);
+                }
+                this.animal.setBreedingAge(6000);
+                this.mate.setBreedingAge(6000);
+                this.animal.resetLoveTicks();
+                this.mate.resetLoveTicks();
+                beaver.setBreedingAge(-24000);
+                beaver.refreshPositionAndAngles(this.animal.getX(), this.animal.getY(), this.animal.getZ(), 0.0f, 0.0f);
+                serverWorld.spawnEntityAndPassengers(beaver);
+                this.world.sendEntityStatus(this.animal, EntityStatuses.ADD_BREEDING_PARTICLES);
+                if (this.world.getGameRules().getBoolean(GameRules.DO_MOB_LOOT)) {
+                    this.world.spawnEntity(new ExperienceOrbEntity(this.world, this.animal.getX(), this.animal.getY(), this.animal.getZ(), this.animal.getRandom().nextInt(7) + 1));
+                }
             }
         }
     }
@@ -414,6 +415,30 @@ public class Beaver extends AnimalEntity implements GeoEntity {
     }
 
     @Override
+    public ActionResult interactMob(PlayerEntity player, Hand hand) {
+        ItemStack itemStack = player.getStackInHand(hand);
+        Item item = itemStack.getItem();
+        if (this.getWorld().isClient) {
+            boolean bl = this.isOwner(player) || this.isTamed() || itemStack.isOf(Items.STICK) && !this.isTamed();
+            return bl ? ActionResult.CONSUME : ActionResult.PASS;
+        }
+        if (!player.getAbilities().creativeMode) {
+            itemStack.decrement(1);
+        }
+        if (this.random.nextInt(3) == 0) {
+            this.setOwner(player);
+            this.navigation.stop();
+            this.setTarget(null);
+            this.setSitting(true);
+            this.getWorld().sendEntityStatus(this, EntityStatuses.ADD_POSITIVE_PLAYER_REACTION_PARTICLES);
+            return ActionResult.SUCCESS;
+        } else {
+            this.getWorld().sendEntityStatus(this, EntityStatuses.ADD_NEGATIVE_PLAYER_REACTION_PARTICLES);
+        }
+        return ActionResult.SUCCESS;
+    }
+
+    @Override
     public void handleStatus(byte status) {
         if (status == EntityStatuses.CREATE_EATING_PARTICLES) {
             ItemStack itemStack = this.getEquippedStack(EquipmentSlot.MAINHAND);
@@ -427,10 +452,6 @@ public class Beaver extends AnimalEntity implements GeoEntity {
             super.handleStatus(status);
         }
     }
-    @Override
-    protected void initEquipment(Random random, LocalDifficulty localDifficulty) {
-        //used to have them start with logs occasionally, but its unnecessary
-    }
 
     @Override
     public boolean canEquip(ItemStack stack) {
@@ -440,35 +461,9 @@ public class Beaver extends AnimalEntity implements GeoEntity {
         }
         return equipmentSlot == EquipmentSlot.MAINHAND && super.canEquip(stack);
     }
+
     private boolean canEat(ItemStack stack) {
         return stack.getItem().isFood() && this.getTarget() == null && this.isOnGround() && !this.isSleeping();
-    }
-
-    List<UUID> getTrustedUuids() {
-        ArrayList<UUID> list = Lists.newArrayList();
-        list.add(this.dataTracker.get(OWNER).orElse(null));
-        list.add(this.dataTracker.get(OTHER_TRUSTED).orElse(null));
-        return list;
-    }
-
-    @Override
-    public void writeCustomDataToNbt(NbtCompound nbt) {
-        super.writeCustomDataToNbt(nbt);
-        List<UUID> list = this.getTrustedUuids();
-        NbtList nbtList = new NbtList();
-        for (UUID uUID : list) {
-            if (uUID == null) continue;
-            nbtList.add(NbtHelper.fromUuid(uUID));
-        }
-    }
-
-    @Override
-    public void readCustomDataFromNbt(NbtCompound nbt) {
-        super.readCustomDataFromNbt(nbt);
-        NbtList nbtList = nbt.getList("Trusted", NbtElement.INT_ARRAY_TYPE);
-        for (int i = 0; i < nbtList.size(); ++i) {
-            this.addTrustedUuid(NbtHelper.toUuid(nbtList.get(i)));
-        }
     }
 
     @Override
@@ -483,44 +478,42 @@ public class Beaver extends AnimalEntity implements GeoEntity {
     }
 
     class PickupItemGoal extends Goal {
-        private final Beaver beaver;
-        public PickupItemGoal(Beaver mob) {
+        public PickupItemGoal() {
             this.setControls(EnumSet.of(Goal.Control.MOVE));
-            this.beaver = mob;
         }
 
         @Override
         public boolean canStart() {
-            if (!this.beaver.getEquippedStack(EquipmentSlot.MAINHAND).isEmpty()) {
+            if (!Beaver.this.getEquippedStack(EquipmentSlot.MAINHAND).isEmpty()) {
                 return false;
             }
-            if (this.beaver.getTarget() != null || this.beaver.getAttacker() != null) {
+            if (Beaver.this.getTarget() != null || Beaver.this.getAttacker() != null) {
                 return false;
             }
-            if (!this.beaver.wantsToPickupItem()) {
+            if (!Beaver.this.wantsToPickupItem()) {
                 return false;
             }
-            if (this.beaver.getRandom().nextInt(Beaver.PickupItemGoal.toGoalTicks(10)) != 0) {
+            if (Beaver.this.getRandom().nextInt(Beaver.PickupItemGoal.toGoalTicks(10)) != 0) {
                 return false;
             }
-            List<ItemEntity> list = this.beaver.getWorld().getEntitiesByClass(ItemEntity.class, this.beaver.getBoundingBox().expand(8.0, 8.0, 8.0), PICKABLE_DROP_FILTER);
-            return !list.isEmpty() && this.beaver.getEquippedStack(EquipmentSlot.MAINHAND).isEmpty();
+            List<ItemEntity> list = Beaver.this.getWorld().getEntitiesByClass(ItemEntity.class, Beaver.this.getBoundingBox().expand(8.0, 8.0, 8.0), PICKABLE_DROP_FILTER);
+            return !list.isEmpty() && Beaver.this.getEquippedStack(EquipmentSlot.MAINHAND).isEmpty();
         }
 
         @Override
         public void tick() {
-            List<ItemEntity> list = this.beaver.getWorld().getEntitiesByClass(ItemEntity.class, this.beaver.getBoundingBox().expand(8.0, 8.0, 8.0), PICKABLE_DROP_FILTER);
-            ItemStack itemStack = this.beaver.getEquippedStack(EquipmentSlot.MAINHAND);
+            List<ItemEntity> list = Beaver.this.getWorld().getEntitiesByClass(ItemEntity.class, Beaver.this.getBoundingBox().expand(8.0, 8.0, 8.0), PICKABLE_DROP_FILTER);
+            ItemStack itemStack = Beaver.this.getEquippedStack(EquipmentSlot.MAINHAND);
             if (itemStack.isEmpty() && !list.isEmpty()) {
-                this.beaver.getNavigation().startMovingTo(list.get(0), .6f);
+                Beaver.this.getNavigation().startMovingTo(list.get(0), .6f);
             }
         }
 
         @Override
         public void start() {
-            List<ItemEntity> list = this.beaver.getWorld().getEntitiesByClass(ItemEntity.class, this.beaver.getBoundingBox().expand(8.0, 8.0, 8.0), PICKABLE_DROP_FILTER);
+            List<ItemEntity> list = Beaver.this.getWorld().getEntitiesByClass(ItemEntity.class, Beaver.this.getBoundingBox().expand(8.0, 8.0, 8.0), PICKABLE_DROP_FILTER);
             if (!list.isEmpty()) {
-                this.beaver.getNavigation().startMovingTo(list.get(0), .6f);
+                Beaver.this.getNavigation().startMovingTo(list.get(0), .6f);
             }
         }
     }
@@ -534,8 +527,6 @@ public class Beaver extends AnimalEntity implements GeoEntity {
     protected void initDataTracker() {
         super.initDataTracker();
         this.dataTracker.startTracking(CARRIED_BLOCK, Optional.empty());
-        this.dataTracker.startTracking(OWNER, Optional.empty());
-        this.dataTracker.startTracking(OTHER_TRUSTED, Optional.empty());
     }
 
     @Override
@@ -571,19 +562,21 @@ public class Beaver extends AnimalEntity implements GeoEntity {
 
     @Override
     protected void initGoals() {
-        this.goalSelector.add(0, new BeaverSwimGoal(this));
+        this.goalSelector.add(0, new BeaverSwimGoal());
         this.goalSelector.add(1, new EscapeDangerGoal(this, 1.0f));
-        this.goalSelector.add(8, new PickupItemGoal(this));
+        this.goalSelector.add(2, new DamGoal(0.6f, 30, 1));
         this.goalSelector.add(3, new MateGoal(1.0));
-        this.goalSelector.add(15, new WaterWanderGoal(this, 1.0));
-        this.goalSelector.add(2, new Beaver.DamGoal(this, 0.6f, 30, 1));
-        this.goalSelector.add(4, new Beaver.BeavGoal(this, .6f, 16, 3));
-        this.goalSelector.add(3, new Beaver.PickupSidewaysLogGoal(this, .6f));
+        this.goalSelector.add(3, new PickupSidewaysLogGoal(.6f));
+        this.goalSelector.add(4, new BeavGoal(.6f, 16, 3));
+        this.goalSelector.add(1, new FollowOwnerGoal(this, 1.0, 10.0f, 2.0f, false));
         this.goalSelector.add(7, new TemptGoal(this, .5f, BREEDING_INGREDIENT, false));
         this.goalSelector.add(8, new FollowParentGoal(this, .7f));
+        this.goalSelector.add(8, new PickupItemGoal());
         this.goalSelector.add(9, new WanderAroundGoal(this, .5f));
         this.goalSelector.add(10, new LookAtEntityGoal(this, PlayerEntity.class, 6.0f));
         this.goalSelector.add(11, new LookAroundGoal(this));
+        this.goalSelector.add(15, new WaterWanderGoal(1.0));
+
     }
 
     @Nullable
@@ -591,32 +584,31 @@ public class Beaver extends AnimalEntity implements GeoEntity {
     public Beaver createChild(ServerWorld world, PassiveEntity entity) {
         return ModEntities.BEAVER.create(world);
     }
+
     public class DamGoal extends MoveToTargetPosGoal {
-        private final Beaver beaver;
-        public DamGoal(Beaver mob, double speed, int range, int maxYDifference) {
-            super(mob, speed, range, maxYDifference);
-            this.beaver = mob;
+        public DamGoal(double speed, int range, int maxYDifference) {
+            super(Beaver.this, speed, range, maxYDifference);
         }
 
         @Override
         public double getDesiredDistanceToTarget() {
-            return 2.0;
+            return 1.5;
         }
 
         @Override
         public void tick() {
             super.tick();
             if (this.hasReached()) {
-                ItemStack itemStack = this.beaver.getEquippedStack(EquipmentSlot.MAINHAND);
-                BlockState blockState = this.beaver.getCarriedBlock();
+                ItemStack itemStack = Beaver.this.getEquippedStack(EquipmentSlot.MAINHAND);
+                BlockState blockState = Beaver.this.getCarriedBlock();
                 if (blockState == null) {
                     return;
                 }
-                World world = this.beaver.getWorld();
+                World world = Beaver.this.getWorld();
                 boolean blockPlaced = world.setBlockState(targetPos, blockState, Block.NOTIFY_ALL);
                 if(blockPlaced){
-                    world.emitGameEvent(GameEvent.BLOCK_PLACE, targetPos, GameEvent.Emitter.of(this.beaver, blockState));
-                    this.beaver.setCarriedBlock(null);
+                    world.emitGameEvent(GameEvent.BLOCK_PLACE, targetPos, GameEvent.Emitter.of(Beaver.this, blockState));
+                    Beaver.this.setCarriedBlock(null);
                     if (blockState.getBlock().asItem() == itemStack.getItem()) {
                         itemStack.decrement(1);
                     }
@@ -627,16 +619,12 @@ public class Beaver extends AnimalEntity implements GeoEntity {
 
         @Override
         public boolean canStart() {
-            ItemStack itemStack = this.beaver.getEquippedStack(EquipmentSlot.MAINHAND);
-            BlockState carriedBlock = this.beaver.getCarriedBlock();
+            ItemStack itemStack = Beaver.this.getEquippedStack(EquipmentSlot.MAINHAND);
+            BlockState carriedBlock = Beaver.this.getCarriedBlock();
             if (!itemStack.isEmpty() || carriedBlock != null) {
                 return super.canStart();
             }
             return false;
-        }
-        @Override
-        public boolean shouldResetPath() {
-            return this.tryingTime % 50 == 0;
         }
 
         @Override
@@ -649,6 +637,10 @@ public class Beaver extends AnimalEntity implements GeoEntity {
             }
 
             boolean touchingSolid = false;
+
+            if (!world.isAir(pos.up())) {
+                return false;
+            }
 
             // Count the number of adjacent water blocks and check if there's a solid block.
             for (Direction dir : Direction.values()) {
@@ -683,16 +675,14 @@ public class Beaver extends AnimalEntity implements GeoEntity {
 
     public class PickupSidewaysLogGoal extends MoveToTargetPosGoal {
         private static final int EATING_TIME = 30;
-        private final Beaver beaver;
         protected int timer = 0;
         @Override
         public double getDesiredDistanceToTarget() {
             return 2.0;
         }
 
-        public PickupSidewaysLogGoal(Beaver beaver, double speed) {
-            super(beaver, speed, 10);
-            this.beaver = beaver;
+        public PickupSidewaysLogGoal(double speed) {
+            super(Beaver.this, speed, 10);
         }
 
         @Override
@@ -724,7 +714,7 @@ public class Beaver extends AnimalEntity implements GeoEntity {
         @Override
         public boolean shouldContinue() {
             // If the target block is no longer a log, stop.
-            if (!isLog(beaver.getWorld().getBlockState(this.targetPos))) {
+            if (!isLog(Beaver.this.getWorld().getBlockState(this.targetPos))) {
                 return false;
             }
 
@@ -739,13 +729,13 @@ public class Beaver extends AnimalEntity implements GeoEntity {
         @Override
         public void tick() {
             super.tick();
-            ServerWorld world = (ServerWorld) beaver.getWorld();
+            ServerWorld world = (ServerWorld) Beaver.this.getWorld();
             if (this.hasReached()) {
                 if (this.timer < EATING_TIME) {
-                    this.beaver.startEatingTree();
+                    Beaver.this.startEatingTree();
                     if (this.timer % 5 == 0) {
                         Vec3d blockCenter = new Vec3d(this.targetPos.getX() + 0.5, this.targetPos.getY() + 0.5, this.targetPos.getZ() + 0.5);
-                        Vec3d beaverPos = new Vec3d(beaver.getX(), beaver.getY(), beaver.getZ());
+                        Vec3d beaverPos = new Vec3d(Beaver.this.getX(), Beaver.this.getY(), Beaver.this.getZ());
 
                         Vec3d direction = blockCenter.subtract(beaverPos).normalize();
 
@@ -754,28 +744,28 @@ public class Beaver extends AnimalEntity implements GeoEntity {
                         double spawnY = blockCenter.y + direction.y * 0.5;
                         double spawnZ = blockCenter.z + direction.z * 0.5;
 
-                        world.spawnParticles(new BlockStateParticleEffect(ParticleTypes.BLOCK, this.beaver.getWorld().getBlockState(this.targetPos)),
+                        world.spawnParticles(new BlockStateParticleEffect(ParticleTypes.BLOCK, Beaver.this.getWorld().getBlockState(this.targetPos)),
                                 spawnX, spawnY, spawnZ, 200,
                                 0.0D, 0.0D, 0.0D, 2.0D);
 
-                        this.beaver.playSound(SoundEvents.ENTITY_GENERIC_EAT, .4f, 1.5f);
+                        Beaver.this.playSound(SoundEvents.ENTITY_GENERIC_EAT, .4f, 1.5f);
                     }
                     this.timer++;
                 } else {
                     this.pickUpLog();
-                    this.beaver.stopEatingTree();
+                    Beaver.this.stopEatingTree();
                     timer = 0; // Reset the timer for the next log
                 }
             }
         }
 
         private void pickUpLog() {
-            BlockState state = this.beaver.getWorld().getBlockState(this.targetPos);
+            BlockState state = Beaver.this.getWorld().getBlockState(this.targetPos);
             if (isLog(state) && isSidewaysLog(state)) {
-                World world = this.beaver.getWorld();
-                this.beaver.equipStack(EquipmentSlot.MAINHAND, new ItemStack(state.getBlock()));
-                this.beaver.playSound(SoundEvents.BLOCK_WOOD_BREAK, 1.0f, 1.0f);
-                this.beaver.setCarriedBlock(state);
+                World world = Beaver.this.getWorld();
+                Beaver.this.equipStack(EquipmentSlot.MAINHAND, new ItemStack(state.getBlock()));
+                Beaver.this.playSound(SoundEvents.BLOCK_WOOD_BREAK, 1.0f, 1.0f);
+                Beaver.this.setCarriedBlock(state);
                 world.breakBlock(this.targetPos, false);
             }
         }
@@ -785,10 +775,9 @@ public class Beaver extends AnimalEntity implements GeoEntity {
     public class BeavGoal extends MoveToTargetPosGoal {
         private static final int EATING_TIME = 30;
         protected int timer;
-        private final Beaver beaver;
-        public BeavGoal(Beaver mob, double speed, int range, int maxYDifference) {
-            super(mob, speed, range, maxYDifference);
-            this.beaver = mob;
+
+        public BeavGoal(double speed, int range, int maxYDifference) {
+            super(Beaver.this, speed, range, maxYDifference);
         }
 
         @Override
@@ -798,14 +787,20 @@ public class Beaver extends AnimalEntity implements GeoEntity {
         @Override
         public boolean shouldContinue() {
             // If the target block is no longer a log, stop.
-            if (!isLog(beaver.getWorld().getBlockState(this.targetPos))) {
+            if (!isLog(Beaver.this.getWorld().getBlockState(this.targetPos))) {
                 return false;
             }
 
             // If the beaver cannot pathfind to the block, stop.
-//            if (this.beaver.getNavigation().findPathTo(this.targetPos, 1) == null) {
-//                return false;
-//            }
+            if (Beaver.this.getNavigation().findPathTo(this.targetPos, 1) == null) {
+                return false;
+            }
+
+            // Additional check to prevent the beaver from continuing if it already holds a log
+            ItemStack itemStack = Beaver.this.getEquippedStack(EquipmentSlot.MAINHAND);
+            if (!itemStack.isEmpty()) {
+                return false;
+            }
 
             return super.shouldContinue();
         }
@@ -832,20 +827,30 @@ public class Beaver extends AnimalEntity implements GeoEntity {
             // Ensure it's the second log by checking there's a log below, and NOT a log above.
             return world.getBlockState(pos.down()).isIn(BlockTags.LOGS);
         }
+
         @Override
         public boolean canStop() {
             return this.timer >= EATING_TIME;
         }
+
         @Override
         public void tick() {
             super.tick();
-            ServerWorld world = (ServerWorld) beaver.getWorld();
+            ServerWorld world = (ServerWorld) Beaver.this.getWorld();
+
+            // Additional check to stop the beaver if it already holds a log
+            ItemStack itemStack = Beaver.this.getEquippedStack(EquipmentSlot.MAINHAND);
+            if (!itemStack.isEmpty()) {
+                this.stop();
+                return;
+            }
+
             if (this.hasReached()) {
                 if (this.timer < EATING_TIME) {
-                    this.beaver.startEatingTree();
+                    Beaver.this.startEatingTree();
                     if (this.timer % 5 == 0) { // Play particle effect and sound every second
                         Vec3d blockCenter = new Vec3d(this.targetPos.getX() + 0.5, this.targetPos.getY() + 0.5, this.targetPos.getZ() + 0.5);
-                        Vec3d beaverPos = new Vec3d(beaver.getX(), beaver.getY(), beaver.getZ());
+                        Vec3d beaverPos = new Vec3d(Beaver.this.getX(), Beaver.this.getY(), Beaver.this.getZ());
 
                         Vec3d direction = blockCenter.subtract(beaverPos).normalize();
 
@@ -854,30 +859,30 @@ public class Beaver extends AnimalEntity implements GeoEntity {
                         double spawnY = blockCenter.y + direction.y * 0.5;
                         double spawnZ = blockCenter.z + direction.z * 0.5;
 
-                        world.spawnParticles(new BlockStateParticleEffect(ParticleTypes.BLOCK, this.beaver.getWorld().getBlockState(this.targetPos)),
+                        world.spawnParticles(new BlockStateParticleEffect(ParticleTypes.BLOCK, Beaver.this.getWorld().getBlockState(this.targetPos)),
                                 spawnX, spawnY, spawnZ, 200,
                                 0.0D, 0.0D, 0.0D, 2.0D);
-                        this.beaver.playSound(SoundEvents.ENTITY_GENERIC_EAT, .4f, 1.5f);
+                        Beaver.this.playSound(SoundEvents.ENTITY_GENERIC_EAT, .4f, 1.5f);
                     }
                     this.timer++;
                 } else {
                     this.eatWood();
-                    this.beaver.stopEatingTree();
+                    Beaver.this.stopEatingTree();
                     timer = 0; // Reset the timer for the next log
                 }
             }
         }
 
         protected void eatWood() {
-            if (!this.beaver.getWorld().getGameRules().getBoolean(GameRules.DO_MOB_GRIEFING)) {
+            if (!Beaver.this.getWorld().getGameRules().getBoolean(GameRules.DO_MOB_GRIEFING)) {
                 return;
             }
-            BlockState blockState = this.beaver.getWorld().getBlockState(this.targetPos);
+            BlockState blockState = Beaver.this.getWorld().getBlockState(this.targetPos);
             if (isLog(blockState)) {
                 // Add logs to a list starting from the targetPos and moving upward
                 List<BlockPos> logs = new ArrayList<>();
                 BlockPos current = this.targetPos;
-                while (isLog(this.beaver.getWorld().getBlockState(current))) {
+                while (isLog(Beaver.this.getWorld().getBlockState(current))) {
                     logs.add(current);
                     current = current.up();
                 }
@@ -895,15 +900,15 @@ public class Beaver extends AnimalEntity implements GeoEntity {
         }
 
         private void eatLog(BlockState state) {
-            World world = this.beaver.getWorld();
-            this.beaver.equipStack(EquipmentSlot.MAINHAND, new ItemStack(state.getBlock()));
-            this.beaver.playSound(SoundEvents.BLOCK_WOOD_BREAK, 1.0f, 1.0f);
-            this.beaver.setCarriedBlock(state);
+            World world = Beaver.this.getWorld();
+            Beaver.this.equipStack(EquipmentSlot.MAINHAND, new ItemStack(state.getBlock()));
+            Beaver.this.playSound(SoundEvents.BLOCK_WOOD_BREAK, 1.0f, 1.0f);
+            Beaver.this.setCarriedBlock(state);
             world.breakBlock(this.targetPos, false);
         }
 
         private void repositionLog(List<BlockPos> logs) {
-            World world = this.beaver.getWorld();
+            World world = Beaver.this.getWorld();
             for (BlockPos logPos : logs) {
                 BlockState logState = world.getBlockState(logPos);
 
@@ -923,12 +928,13 @@ public class Beaver extends AnimalEntity implements GeoEntity {
             }
         }
 
+
         @Override
         public boolean canStart() {
             if (!super.canStart()) {
                 return false; // Return false if the superclass's canStart method returns false
             }
-            ItemStack itemStack = this.beaver.getEquippedStack(EquipmentSlot.MAINHAND);
+            ItemStack itemStack = Beaver.this.getEquippedStack(EquipmentSlot.MAINHAND);
             return itemStack.isEmpty();
         }
 

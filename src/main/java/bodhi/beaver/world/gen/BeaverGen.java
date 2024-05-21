@@ -1,7 +1,7 @@
 package bodhi.beaver.world.gen;
 
-public class ModWorldGen {
+public class BeaverGen {
     public static void generateWorldGen () {
-        ModEntitySpawn.addEntitySpawn();
+        BeaverSpawn.addEntitySpawn();
     }
 }

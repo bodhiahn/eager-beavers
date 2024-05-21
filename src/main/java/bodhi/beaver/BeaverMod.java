@@ -4,7 +4,7 @@ import bodhi.beaver.entity.Beaver;
 import bodhi.beaver.entity.client.ModEntities;
 import bodhi.beaver.items.BeaverPelt;
 import bodhi.beaver.materials.BeaverArmorMaterial;
-import bodhi.beaver.world.gen.ModWorldGen;
+import bodhi.beaver.world.gen.BeaverGen;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.item.v1.FabricItemSettings;
 import net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents;
@@ -29,7 +29,7 @@ public class BeaverMod implements ModInitializer {
     @Override
     public void onInitialize() {
         GeckoLib.initialize();
-        ModWorldGen.generateWorldGen();
+        BeaverGen.generateWorldGen();
         FabricDefaultAttributeRegistry.register(ModEntities.BEAVER, Beaver.setAttributes());
         Registry.register(Registries.ITEM, new Identifier(MOD_ID, "beaver_spawn_egg"), BEAVER_SPAWN_EGG);
         ItemGroupEvents.modifyEntriesEvent(ItemGroups.SPAWN_EGGS).register(content -> {

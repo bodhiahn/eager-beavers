@@ -8,8 +8,6 @@ import net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry;
 public class BeaverModClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
-
 		EntityRendererRegistry.register(ModEntities.BEAVER, BeaverRenderer::new);
-
 	}
 }
