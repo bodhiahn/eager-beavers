@@ -54,9 +54,9 @@ public class BeaverRenderer extends GeoEntityRenderer<Beaver> {
     @Override
     public void preRender(MatrixStack poseStack, Beaver beaver, BakedGeoModel model, VertexConsumerProvider bufferSource, VertexConsumer buffer, boolean isReRender, float partialTick, int packedLight, int packedOverlay, float red, float green, float blue,
                           float alpha) {
+        Optional<GeoBone> head = model.getBone("head");
         if (beaver.isBaby()) {
             poseStack.scale(0.4f, 0.4f, 0.4f);
-            Optional<GeoBone> head = model.getBone("head");
             head.ifPresent(geoBone -> {
                 geoBone.setScaleX(1.4f);
                 geoBone.setScaleY(1.4f);
@@ -64,6 +64,11 @@ public class BeaverRenderer extends GeoEntityRenderer<Beaver> {
             });
         } else {
             poseStack.scale(0.8f, 0.8f, 0.8f);
+            head.ifPresent(geoBone -> {
+                geoBone.setScaleX(1f);
+                geoBone.setScaleY(1f);
+                geoBone.setScaleZ(1f);
+            });
         }
         super.preRender(poseStack, beaver, model, bufferSource, buffer, isReRender, packedLight, packedOverlay, packedLight, red, green, blue, alpha);
     }

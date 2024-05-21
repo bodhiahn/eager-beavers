@@ -1,0 +1,14 @@
+{
+  "required": true,
+  "package": "bodhi.beaver.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": [
+    "BeaverTailMixin",
+    "PlayerMixin"
+  ],
+  "client": [
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
