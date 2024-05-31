@@ -41,7 +41,7 @@ public class BeaverMod implements ModInitializer {
         });
 
         Registry.register(Registries.ITEM, new Identifier("beavermod", "beaver_pelt"), BEAVER_PELT);
-        ItemGroupEvents.modifyEntriesEvent(ItemGroups.NATURAL).register(content -> {
+        ItemGroupEvents.modifyEntriesEvent(ItemGroups.INGREDIENTS).register(content -> {
             content.add(BEAVER_PELT);
         });
 

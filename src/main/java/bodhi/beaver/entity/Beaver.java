@@ -2,7 +2,6 @@ package bodhi.beaver.entity;
 
 import bodhi.beaver.BeaverMod;
 import bodhi.beaver.entity.client.ModEntities;
-import com.google.common.collect.Lists;
 import net.minecraft.advancement.criterion.Criteria;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
@@ -22,9 +21,6 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.fluid.Fluids;
 import net.minecraft.item.*;
 import net.minecraft.nbt.NbtCompound;
-import net.minecraft.nbt.NbtElement;
-import net.minecraft.nbt.NbtHelper;
-import net.minecraft.nbt.NbtList;
 import net.minecraft.particle.BlockStateParticleEffect;
 import net.minecraft.particle.ItemStackParticleEffect;
 import net.minecraft.particle.ParticleTypes;
@@ -38,7 +34,6 @@ import net.minecraft.sound.SoundEvent;
 import net.minecraft.sound.SoundEvents;
 import net.minecraft.stat.Stats;
 import net.minecraft.util.ActionResult;
-import net.minecraft.util.DyeColor;
 import net.minecraft.util.Hand;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
@@ -64,7 +59,33 @@ import java.util.function.Predicate;
 public class Beaver extends TameableEntity implements GeoEntity {
     private static final Ingredient BREEDING_INGREDIENT = Ingredient.ofItems(Items.OAK_WOOD, Items.BIRCH_WOOD, Items.DARK_OAK_WOOD, Items.SPRUCE_SAPLING);
     private static final TrackedData<Optional<BlockState>> CARRIED_BLOCK = DataTracker.registerData(Beaver.class, TrackedDataHandlerRegistry.OPTIONAL_BLOCK_STATE);
-    static final Predicate<ItemEntity> PICKABLE_DROP_FILTER = item -> !item.cannotPickup() && item.isAlive();
+    static final Predicate<ItemEntity> PICKABLE_DROP_FILTER = item -> {
+        if (item.cannotPickup() || !item.isAlive()) {
+            return false;
+        }
+
+        Item itemType = item.getStack().getItem();
+
+        // Check if the item is food
+        if (itemType.isFood()) {
+            return true;
+        }
+
+        // Check if the item is a block
+        if (itemType instanceof BlockItem) {
+            return true;
+        }
+
+        // Check if the item is a sapling
+        if (itemType == Items.OAK_SAPLING || itemType == Items.SPRUCE_SAPLING ||
+                itemType == Items.BIRCH_SAPLING || itemType == Items.JUNGLE_SAPLING ||
+                itemType == Items.ACACIA_SAPLING || itemType == Items.DARK_OAK_SAPLING) {
+            return true;
+        }
+
+        // Check if the item is a stick
+        return itemType == Items.STICK;
+    };
     private int eatingTime;
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
 
@@ -92,8 +113,8 @@ public class Beaver extends TameableEntity implements GeoEntity {
     }
     public static DefaultAttributeContainer.Builder setAttributes() {
         return AnimalEntity.createMobAttributes()
-                .add(EntityAttributes.GENERIC_MAX_HEALTH, 20.0D)
-                .add(EntityAttributes.GENERIC_KNOCKBACK_RESISTANCE, 20)
+                .add(EntityAttributes.GENERIC_MAX_HEALTH, 15.0D)
+                .add(EntityAttributes.GENERIC_KNOCKBACK_RESISTANCE, 10)
                 .add(EntityAttributes.GENERIC_MOVEMENT_SPEED, 0.4f);
     }
 
@@ -413,30 +434,36 @@ public class Beaver extends TameableEntity implements GeoEntity {
             this.eatingTime = 0;
         }
     }
-
     @Override
     public ActionResult interactMob(PlayerEntity player, Hand hand) {
         ItemStack itemStack = player.getStackInHand(hand);
         Item item = itemStack.getItem();
+
         if (this.getWorld().isClient) {
-            boolean bl = this.isOwner(player) || this.isTamed() || itemStack.isOf(Items.STICK) && !this.isTamed();
+            boolean bl = this.isOwner(player) || this.isTamed() || (itemStack.isOf(Items.STICK) && !this.isTamed());
             return bl ? ActionResult.CONSUME : ActionResult.PASS;
         }
-        if (!player.getAbilities().creativeMode) {
-            itemStack.decrement(1);
+
+        if (item == Items.STICK) {
+            if (!player.getAbilities().creativeMode) {
+                itemStack.decrement(1);
+            }
+
+            if (this.random.nextInt(3) == 0) {
+                this.setOwner(player);
+                this.navigation.stop();
+                this.setTarget(null);
+                this.setSitting(true);
+                this.getWorld().sendEntityStatus(this, EntityStatuses.ADD_POSITIVE_PLAYER_REACTION_PARTICLES);
+                return ActionResult.SUCCESS;
+            } else {
+                this.getWorld().sendEntityStatus(this, EntityStatuses.ADD_NEGATIVE_PLAYER_REACTION_PARTICLES);
+            }
         }
-        if (this.random.nextInt(3) == 0) {
-            this.setOwner(player);
-            this.navigation.stop();
-            this.setTarget(null);
-            this.setSitting(true);
-            this.getWorld().sendEntityStatus(this, EntityStatuses.ADD_POSITIVE_PLAYER_REACTION_PARTICLES);
-            return ActionResult.SUCCESS;
-        } else {
-            this.getWorld().sendEntityStatus(this, EntityStatuses.ADD_NEGATIVE_PLAYER_REACTION_PARTICLES);
-        }
-        return ActionResult.SUCCESS;
+
+        return ActionResult.PASS;
     }
+
 
     @Override
     public void handleStatus(byte status) {
@@ -470,7 +497,44 @@ public class Beaver extends TameableEntity implements GeoEntity {
     public boolean canPickupItem(ItemStack stack) {
         Item item = stack.getItem();
         ItemStack itemStack = this.getEquippedStack(EquipmentSlot.MAINHAND);
-        return itemStack.isEmpty() || this.eatingTime > 0 && item.isFood() && !itemStack.getItem().isFood();
+
+        // Check if the beaver's main hand is empty
+        if (itemStack.isEmpty()) {
+            return isAllowedItem(item);
+        }
+
+        // Check if the beaver is in the process of eating and the new item is food while the current item is not food
+        if (this.eatingTime > 0 && item.isFood() && !itemStack.getItem().isFood()) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private boolean isAllowedItem(Item item) {
+        // Check if the item is food
+        if (item.isFood()) {
+            return true;
+        }
+
+        // Check if the item is a block
+        if (item instanceof BlockItem) {
+            return true;
+        }
+
+        // Check if the item is a sapling
+        if (item == Items.OAK_SAPLING || item == Items.SPRUCE_SAPLING ||
+                item == Items.BIRCH_SAPLING || item == Items.JUNGLE_SAPLING ||
+                item == Items.ACACIA_SAPLING || item == Items.DARK_OAK_SAPLING) {
+            return true;
+        }
+
+        // Check if the item is a stick
+        if (item == Items.STICK) {
+            return true;
+        }
+
+        return false;
     }
 
     boolean wantsToPickupItem() {
@@ -564,11 +628,11 @@ public class Beaver extends TameableEntity implements GeoEntity {
     protected void initGoals() {
         this.goalSelector.add(0, new BeaverSwimGoal());
         this.goalSelector.add(1, new EscapeDangerGoal(this, 1.0f));
-        this.goalSelector.add(2, new DamGoal(0.6f, 30, 1));
+        this.goalSelector.add(2, new DamGoal(0.6f, 30, 10));
         this.goalSelector.add(3, new MateGoal(1.0));
-        this.goalSelector.add(3, new PickupSidewaysLogGoal(.6f));
-        this.goalSelector.add(4, new BeavGoal(.6f, 16, 3));
-        this.goalSelector.add(1, new FollowOwnerGoal(this, 1.0, 10.0f, 2.0f, false));
+        this.goalSelector.add(3, new PickupSidewaysLogGoal(.6f, 15));
+        this.goalSelector.add(3, new BeavGoal(.6f, 25, 3));
+        this.goalSelector.add(1, new FollowOwnerGoal(this, .7f, 10.0f, 2.0f, false));
         this.goalSelector.add(7, new TemptGoal(this, .5f, BREEDING_INGREDIENT, false));
         this.goalSelector.add(8, new FollowParentGoal(this, .7f));
         this.goalSelector.add(8, new PickupItemGoal());
@@ -621,7 +685,8 @@ public class Beaver extends TameableEntity implements GeoEntity {
         public boolean canStart() {
             ItemStack itemStack = Beaver.this.getEquippedStack(EquipmentSlot.MAINHAND);
             BlockState carriedBlock = Beaver.this.getCarriedBlock();
-            if (!itemStack.isEmpty() || carriedBlock != null) {
+            boolean isHoldingBlock = !itemStack.isEmpty() && itemStack.getItem() instanceof BlockItem;
+            if (isHoldingBlock || carriedBlock != null) {
                 return super.canStart();
             }
             return false;
@@ -681,8 +746,8 @@ public class Beaver extends TameableEntity implements GeoEntity {
             return 2.0;
         }
 
-        public PickupSidewaysLogGoal(double speed) {
-            super(Beaver.this, speed, 10);
+        public PickupSidewaysLogGoal(double speed, int range) {
+            super(Beaver.this, speed, range);
         }
 
         @Override
@@ -719,9 +784,9 @@ public class Beaver extends TameableEntity implements GeoEntity {
             }
 
             // If the beaver cannot pathfind to the block, stop.
-//            if (this.beaver.getNavigation().findPathTo(this.targetPos, 1) == null) {
-//                return false;
-//            }
+            if (Beaver.this.getNavigation().findPathTo(this.targetPos, 1) == null) {
+                return false;
+            }
 
             return super.shouldContinue();
         }
@@ -784,8 +849,13 @@ public class Beaver extends TameableEntity implements GeoEntity {
         public double getDesiredDistanceToTarget() {
             return 2.95;
         }
+
         @Override
         public boolean shouldContinue() {
+            if (isEatingTree) {
+                return true;
+            }
+
             // If the target block is no longer a log, stop.
             if (!isLog(Beaver.this.getWorld().getBlockState(this.targetPos))) {
                 return false;
@@ -804,10 +874,6 @@ public class Beaver extends TameableEntity implements GeoEntity {
 
             return super.shouldContinue();
         }
-        @Override
-        public boolean shouldResetPath() {
-            return this.tryingTime % 100 == 0;
-        }
 
         @Override
         protected boolean isTargetPos(WorldView world, BlockPos pos) {
@@ -821,11 +887,28 @@ public class Beaver extends TameableEntity implements GeoEntity {
             if (world.getBlockState(pos.east()).getFluidState().isIn(FluidTags.WATER) ||
                     world.getBlockState(pos.west()).getFluidState().isIn(FluidTags.WATER) ||
                     world.getBlockState(pos.north()).getFluidState().isIn(FluidTags.WATER) ||
-                    world.getBlockState(pos.south()).getFluidState().isIn(FluidTags.WATER)) {
+                    world.getBlockState(pos.south()).getFluidState().isIn(FluidTags.WATER) ||
+                    world.getBlockState(pos.down()).getFluidState().isIn(FluidTags.WATER))
+            {
                 return false;
             }
-            // Ensure it's the second log by checking there's a log below, and NOT a log above.
-            return world.getBlockState(pos.down()).isIn(BlockTags.LOGS);
+
+            // Ensure it's the second log by checking there's a log below
+            if  (!world.getBlockState(pos.down()).isIn(BlockTags.LOGS)) {
+                return false;
+            }
+
+            return hasLeavesAbove(world, pos);
+        }
+
+        private boolean hasLeavesAbove(WorldView world, BlockPos pos) {
+            for (int i = 1; i <= 10; i++) { // check 10 blocks above
+                BlockState blockAbove = world.getBlockState(pos.up(i));
+                if (blockAbove.isIn(BlockTags.LEAVES)) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         @Override
@@ -837,13 +920,6 @@ public class Beaver extends TameableEntity implements GeoEntity {
         public void tick() {
             super.tick();
             ServerWorld world = (ServerWorld) Beaver.this.getWorld();
-
-            // Additional check to stop the beaver if it already holds a log
-            ItemStack itemStack = Beaver.this.getEquippedStack(EquipmentSlot.MAINHAND);
-            if (!itemStack.isEmpty()) {
-                this.stop();
-                return;
-            }
 
             if (this.hasReached()) {
                 if (this.timer < EATING_TIME) {
