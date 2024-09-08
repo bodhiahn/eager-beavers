@@ -28,7 +28,6 @@ public abstract class BeaverTailMixin extends LivingEntityRenderer<AbstractClien
 
     @Inject(method = "<init>", at = @At("RETURN"))
     private void init(EntityRendererFactory.Context ctx, boolean slim, CallbackInfo ci) {
-        // Initialize your BeaverTailModel here and pass required parameters
         BeaverRenderer beaverRenderer = new BeaverRenderer(ctx);
         this.beaverTailModel = new BeaverTailModel(this, this.getModel(), beaverRenderer);
     }

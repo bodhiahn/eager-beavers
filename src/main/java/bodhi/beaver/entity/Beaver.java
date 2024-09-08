@@ -111,10 +111,11 @@ public class Beaver extends TameableEntity implements GeoEntity {
     public boolean isPushedByFluids() {
         return false;
     }
+
     public static DefaultAttributeContainer.Builder setAttributes() {
         return AnimalEntity.createMobAttributes()
-                .add(EntityAttributes.GENERIC_MAX_HEALTH, 15.0D)
-                .add(EntityAttributes.GENERIC_KNOCKBACK_RESISTANCE, 10)
+                .add(EntityAttributes.GENERIC_MAX_HEALTH, 14.0D)
+                .add(EntityAttributes.GENERIC_KNOCKBACK_RESISTANCE, .1D)
                 .add(EntityAttributes.GENERIC_MOVEMENT_SPEED, 0.4f);
     }
 
