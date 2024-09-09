@@ -59,6 +59,7 @@ import java.util.function.Predicate;
 public class Beaver extends TameableEntity implements GeoEntity {
     private static final Ingredient BREEDING_INGREDIENT = Ingredient.ofItems(Items.OAK_WOOD, Items.BIRCH_WOOD, Items.DARK_OAK_WOOD, Items.SPRUCE_SAPLING);
     private static final TrackedData<Optional<BlockState>> CARRIED_BLOCK = DataTracker.registerData(Beaver.class, TrackedDataHandlerRegistry.OPTIONAL_BLOCK_STATE);
+
     static final Predicate<ItemEntity> PICKABLE_DROP_FILTER = item -> {
         if (item.cannotPickup() || !item.isAlive()) {
             return false;
@@ -88,6 +89,8 @@ public class Beaver extends TameableEntity implements GeoEntity {
     };
     private int eatingTime;
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
+
+    private final List<BlockPos> storedTreeLogs = new ArrayList<>();
 
     protected static final RawAnimation HOLD_IDLE_ANIM = RawAnimation.begin().thenLoop("animation.beaver.holdidle");
     protected static final RawAnimation HOLD_WALK_ANIM = RawAnimation.begin().thenLoop("animation.beaver.holdwalk");
@@ -374,6 +377,12 @@ public class Beaver extends TameableEntity implements GeoEntity {
         }
 
         @Override
+        public boolean canStart() {
+            // Only allow mating if a player has interacted with the beaver
+            return super.canStart() && Beaver.this.getLovingPlayer() != null;
+        }
+
+        @Override
         protected void breed() {
             ServerWorld serverWorld = (ServerWorld) this.world;
             Beaver beaver = (Beaver) this.animal.createChild(serverWorld, this.mate);
@@ -629,10 +638,10 @@ public class Beaver extends TameableEntity implements GeoEntity {
     protected void initGoals() {
         this.goalSelector.add(0, new BeaverSwimGoal());
         this.goalSelector.add(1, new EscapeDangerGoal(this, 1.0f));
-        this.goalSelector.add(2, new DamGoal(0.6f, 30, 10));
-        this.goalSelector.add(3, new MateGoal(1.0));
-        this.goalSelector.add(3, new PickupSidewaysLogGoal(.6f, 15));
-        this.goalSelector.add(3, new BeavGoal(.6f, 25, 3));
+        this.goalSelector.add(1, new DamGoal(0.6f, 30, 10));
+        this.goalSelector.add(4, new MateGoal(1.0));
+        this.goalSelector.add(2, new FinishLogGoal());
+        this.goalSelector.add(2, new BeavGoal(0.6f, 25, 3));
         this.goalSelector.add(1, new FollowOwnerGoal(this, .7f, 10.0f, 2.0f, false));
         this.goalSelector.add(7, new TemptGoal(this, .5f, BREEDING_INGREDIENT, false));
         this.goalSelector.add(8, new FollowParentGoal(this, .7f));
@@ -656,73 +665,103 @@ public class Beaver extends TameableEntity implements GeoEntity {
         }
 
         @Override
-        public double getDesiredDistanceToTarget() {
-            return 1.5;
-        }
-
-        @Override
-        public void tick() {
-            super.tick();
-            if (this.hasReached()) {
-                ItemStack itemStack = Beaver.this.getEquippedStack(EquipmentSlot.MAINHAND);
-                BlockState blockState = Beaver.this.getCarriedBlock();
-                if (blockState == null) {
-                    return;
-                }
-                World world = Beaver.this.getWorld();
-                boolean blockPlaced = world.setBlockState(targetPos, blockState, Block.NOTIFY_ALL);
-                if(blockPlaced){
-                    world.emitGameEvent(GameEvent.BLOCK_PLACE, targetPos, GameEvent.Emitter.of(Beaver.this, blockState));
-                    Beaver.this.setCarriedBlock(null);
-                    if (blockState.getBlock().asItem() == itemStack.getItem()) {
-                        itemStack.decrement(1);
-                    }
-                    this.stop();
-                }
-            }
-        }
-
-        @Override
         public boolean canStart() {
             ItemStack itemStack = Beaver.this.getEquippedStack(EquipmentSlot.MAINHAND);
-            BlockState carriedBlock = Beaver.this.getCarriedBlock();
-            boolean isHoldingBlock = !itemStack.isEmpty() && itemStack.getItem() instanceof BlockItem;
-            if (isHoldingBlock || carriedBlock != null) {
-                return super.canStart();
+            // Only start if the beaver is holding a block and can find a valid water target
+            if (!itemStack.isEmpty() && itemStack.getItem() instanceof BlockItem) {
+                BlockState carriedBlock = Beaver.this.getCarriedBlock();
+                return carriedBlock != null && findValidWaterTarget();
             }
             return false;
         }
 
         @Override
+        public boolean shouldContinue() {
+            // Continue damming if the beaver is still holding a block and hasn't reached the target
+            return !Beaver.this.getEquippedStack(EquipmentSlot.MAINHAND).isEmpty() && super.shouldContinue();
+        }
+
+        @Override
+        public void tick() {
+            super.tick();
+
+            // Once the beaver reaches the target, place the block
+            if (this.hasReached()) {
+                this.placeDamBlock();
+            }
+        }
+
+        // Method to place the block once the beaver reaches the target position
+        private void placeDamBlock() {
+            ItemStack itemStack = Beaver.this.getEquippedStack(EquipmentSlot.MAINHAND);
+            BlockState carriedBlock = Beaver.this.getCarriedBlock();
+
+            if (carriedBlock == null || !(itemStack.getItem() instanceof BlockItem)) {
+                return;  // No block to place
+            }
+
+            World world = Beaver.this.getWorld();
+            boolean blockPlaced = world.setBlockState(targetPos, carriedBlock, Block.NOTIFY_ALL);  // Try placing the block
+
+            if (blockPlaced) {
+                // Emit dam building particles and sounds
+                world.emitGameEvent(GameEvent.BLOCK_PLACE, targetPos, GameEvent.Emitter.of(Beaver.this, carriedBlock));
+                Beaver.this.setCarriedBlock(null);  // Clear the carried block
+                itemStack.decrement(1);  // Decrement the item stack after placing the block
+                this.stop();  // Stop the goal after placing the block
+            }
+        }
+
+        // Method to find valid water target adjacent to land
+        private boolean findValidWaterTarget() {
+            World world = Beaver.this.getWorld();
+            BlockPos beaverPos = Beaver.this.getBlockPos();
+            int searchRadius = 6;  // Search radius for finding suitable water
+
+            for (BlockPos pos : BlockPos.iterateOutwards(beaverPos, searchRadius, searchRadius, searchRadius)) {
+                if (isValidWaterTarget(pos, world)) {
+                    this.targetPos = pos;  // Set the valid water target
+                    return true;
+                }
+            }
+            return false;  // No valid target found
+        }
+
+        // Override the isTargetPos method inherited from MoveToTargetPosGoal
+        @Override
         protected boolean isTargetPos(WorldView world, BlockPos pos) {
+            return isValidWaterTarget(pos, (World) world);  // Check if the target is valid water
+        }
+
+        // Method to check if a water block is valid (i.e., adjacent to solid land)
+        private boolean isValidWaterTarget(BlockPos pos, World world) {
             BlockState blockState = world.getBlockState(pos);
 
-            // Early exit if the current block is not water.
+            // Ensure the block is water
             if (blockState.getFluidState().getFluid() != Fluids.WATER) {
                 return false;
             }
 
-            boolean touchingSolid = false;
+            // Check if the water block is adjacent to solid ground
+            for (Direction direction : Direction.values()) {
+                BlockPos adjacentPos = pos.offset(direction);
+                BlockState adjacentState = world.getBlockState(adjacentPos);
 
-            if (!world.isAir(pos.up())) {
-                return false;
-            }
-
-            // Count the number of adjacent water blocks and check if there's a solid block.
-            for (Direction dir : Direction.values()) {
-                BlockState adjacentState = world.getBlockState(pos.offset(dir));
-                if (dir != Direction.UP && adjacentState.isOpaque() && dir != Direction.DOWN) {
-                    touchingSolid = true;
-                }
-                if (world.getBlockState(pos.up()).getFluidState().getFluid() == Fluids.WATER) {
-                    touchingSolid = false;
+                if (adjacentState.isOpaque() && adjacentState.isSolidBlock(world, adjacentPos)) {
+                    return true;  // Water block is valid if there's adjacent solid land
                 }
             }
 
-            // Add a condition to check if the current location has the maximum number of adjacent water blocks.
-            return touchingSolid;
+            return false;  // No adjacent land, so not a valid water target
+        }
+
+        protected boolean hasReached() {
+            // Check if the beaver has reached the target position
+            return targetPos != null && targetPos.isWithinDistance(Beaver.this.getPos(), 1.5);
         }
     }
+
+
 
     // Check if the block is a log
     private boolean isLog(BlockState state) {
@@ -739,104 +778,114 @@ public class Beaver extends TameableEntity implements GeoEntity {
         return original;
     }
 
-    public class PickupSidewaysLogGoal extends MoveToTargetPosGoal {
+    public class FinishLogGoal extends Goal {
         private static final int EATING_TIME = 30;
         protected int timer = 0;
-        @Override
-        public double getDesiredDistanceToTarget() {
-            return 2.0;
-        }
+        private BlockPos targetPos;
 
-        public PickupSidewaysLogGoal(double speed, int range) {
-            super(Beaver.this, speed, range);
+        public FinishLogGoal() {
+            this.setControls(EnumSet.of(Goal.Control.MOVE));
         }
 
         @Override
-        public boolean canStop() {
-            return this.timer >= EATING_TIME;
-        }
-
-        private boolean isSidewaysLog(BlockState state) {
-            if (state.getBlock() instanceof PillarBlock) {
-                Direction.Axis axis = state.get(PillarBlock.AXIS);
-                return axis == Direction.Axis.X || axis == Direction.Axis.Z;
-            }
-            return false;
-        }
-        @Override
-        protected boolean isTargetPos(WorldView world, BlockPos pos) {
-            BlockState state = world.getBlockState(pos);
-            // First check if it's a log and then check its orientation.
-            return isLog(state) && isSidewaysLog(state) && !isNearWater(world, pos);
-        }
-
-        private boolean isNearWater(WorldView world, BlockPos pos) {
-            return world.getBlockState(pos.east()).getFluidState().isIn(FluidTags.WATER) ||
-                    world.getBlockState(pos.west()).getFluidState().isIn(FluidTags.WATER) ||
-                    world.getBlockState(pos.north()).getFluidState().isIn(FluidTags.WATER) ||
-                    world.getBlockState(pos.south()).getFluidState().isIn(FluidTags.WATER);
+        public boolean canStart() {
+            // Only start if there are logs in the queue and the beaver is not holding a block
+            return Beaver.this.getEquippedStack(EquipmentSlot.MAINHAND).isEmpty() && !Beaver.this.storedTreeLogs.isEmpty();
         }
 
         @Override
         public boolean shouldContinue() {
-            // If the target block is no longer a log, stop.
-            if (!isLog(Beaver.this.getWorld().getBlockState(this.targetPos))) {
-                return false;
-            }
-
             // If the beaver cannot pathfind to the block, stop.
-            if (Beaver.this.getNavigation().findPathTo(this.targetPos, 1) == null) {
+            if (Beaver.this.getNavigation().findPathTo(this.targetPos, 2) == null) {
                 return false;
             }
 
-            return super.shouldContinue();
+            // Additional check to prevent the beaver from continuing if it already holds a log
+            ItemStack itemStack = Beaver.this.getEquippedStack(EquipmentSlot.MAINHAND);
+            if (!itemStack.isEmpty()) {
+                return false;
+            }
+            // Stop after processing one block so the beaver can dam
+            return this.timer < EATING_TIME;
+        }
+
+        @Override
+        public void start() {
+            this.timer = 0;  // Reset the eating timer
+            this.targetPos = Beaver.this.storedTreeLogs.get(0);  // Get the first log in the list
+            super.start();
+        }
+
+        @Override
+        public void stop() {
+            // Ensure to call super.stop() to fully stop the goal
+            super.stop();
         }
 
         @Override
         public void tick() {
             super.tick();
             ServerWorld world = (ServerWorld) Beaver.this.getWorld();
-            if (this.hasReached()) {
-                if (this.timer < EATING_TIME) {
-                    Beaver.this.startEatingTree();
+
+            // Ensure there's a valid target log to process
+            if (!Beaver.this.storedTreeLogs.isEmpty()) {
+                this.targetPos = Beaver.this.storedTreeLogs.get(0);  // Continuously update the target log block
+
+                // Check if the beaver has reached the log
+                if (this.hasReached()) {
+                    Beaver.this.startEatingTree();  // Signal that the beaver is eating
+
+                    // Play particles and sound every 5 ticks (twice per second)
                     if (this.timer % 5 == 0) {
+                        // Play particle effects and sounds while eating
                         Vec3d blockCenter = new Vec3d(this.targetPos.getX() + 0.5, this.targetPos.getY() + 0.5, this.targetPos.getZ() + 0.5);
                         Vec3d beaverPos = new Vec3d(Beaver.this.getX(), Beaver.this.getY(), Beaver.this.getZ());
-
                         Vec3d direction = blockCenter.subtract(beaverPos).normalize();
-
-                        // Adjust the spawn position to be on the side of the block facing the beaver
                         double spawnX = blockCenter.x + direction.x * 0.5;
                         double spawnY = blockCenter.y + direction.y * 0.5;
                         double spawnZ = blockCenter.z + direction.z * 0.5;
 
                         world.spawnParticles(new BlockStateParticleEffect(ParticleTypes.BLOCK, Beaver.this.getWorld().getBlockState(this.targetPos)),
-                                spawnX, spawnY, spawnZ, 200,
-                                0.0D, 0.0D, 0.0D, 2.0D);
-
-                        Beaver.this.playSound(SoundEvents.ENTITY_GENERIC_EAT, .4f, 1.5f);
+                                spawnX, spawnY, spawnZ, 200, 0.0D, 0.0D, 0.0D, 2.0D);
+                        Beaver.this.playSound(SoundEvents.ENTITY_GENERIC_EAT, .4f, 1.5f);  // Play the eating sound
                     }
+
+                    // Increment the timer
                     this.timer++;
+
+                    // Check if the beaver is done eating
+                    if (this.timer >= EATING_TIME) {
+                        // Once eating is done, pick up the log
+                        this.pickUpLog();
+                        Beaver.this.stopEatingTree();  // Stop eating animation
+                        Beaver.this.storedTreeLogs.remove(0);  // Remove the log from the list after processing
+                        this.timer = 0;  // Reset the timer for the next log
+                        this.stop();  // Stop the goal after processing one log to allow DamGoal to take over
+                    }
                 } else {
-                    this.pickUpLog();
-                    Beaver.this.stopEatingTree();
-                    timer = 0; // Reset the timer for the next log
+                    // Pathfinding towards the log
+                    Beaver.this.getNavigation().startMovingTo(targetPos.getX(), targetPos.getY(), targetPos.getZ(), 0.6);
                 }
             }
         }
 
+        private boolean hasReached() {
+            // Check if the beaver has reached the target position
+            return targetPos.isWithinDistance(Beaver.this.getPos(), 1.5);
+        }
+
+        // Method to pick up the log after it's "eaten"
         private void pickUpLog() {
             BlockState state = Beaver.this.getWorld().getBlockState(this.targetPos);
-            if (isLog(state) && isSidewaysLog(state)) {
-                World world = Beaver.this.getWorld();
-                Beaver.this.equipStack(EquipmentSlot.MAINHAND, new ItemStack(state.getBlock()));
-                Beaver.this.playSound(SoundEvents.BLOCK_WOOD_BREAK, 1.0f, 1.0f);
-                Beaver.this.setCarriedBlock(state);
-                world.breakBlock(this.targetPos, false);
-            }
+            World world = Beaver.this.getWorld();
+
+            // Equip the log in the beaver's main hand
+            Beaver.this.equipStack(EquipmentSlot.MAINHAND, new ItemStack(state.getBlock()));
+            Beaver.this.playSound(SoundEvents.BLOCK_WOOD_BREAK, 1.0f, 1.0f);  // Play log breaking sound
+            Beaver.this.setCarriedBlock(state);
+            world.breakBlock(this.targetPos, false);  // Remove the block from the world
         }
     }
-
 
     public class BeavGoal extends MoveToTargetPosGoal {
         private static final int EATING_TIME = 30;
@@ -926,7 +975,7 @@ public class Beaver extends TameableEntity implements GeoEntity {
                 if (this.timer < EATING_TIME) {
                     Beaver.this.startEatingTree();
                     if (this.timer % 5 == 0) { // Play particle effect and sound every second
-                        Vec3d blockCenter = new Vec3d(this.targetPos.getX() + 0.5, this.targetPos.getY() + 0.5, this.targetPos.getZ() + 0.5);
+                        Vec3d blockCenter = new Vec3d(this.targetPos.getX() + 0.5, this.targetPos.getY() - 0.5, this.targetPos.getZ() + 0.5);
                         Vec3d beaverPos = new Vec3d(Beaver.this.getX(), Beaver.this.getY(), Beaver.this.getZ());
 
                         Vec3d direction = blockCenter.subtract(beaverPos).normalize();
@@ -954,25 +1003,26 @@ public class Beaver extends TameableEntity implements GeoEntity {
             if (!Beaver.this.getWorld().getGameRules().getBoolean(GameRules.DO_MOB_GRIEFING)) {
                 return;
             }
+
             BlockState blockState = Beaver.this.getWorld().getBlockState(this.targetPos);
             if (isLog(blockState)) {
-                // Add logs to a list starting from the targetPos and moving upward
                 List<BlockPos> logs = new ArrayList<>();
                 BlockPos current = this.targetPos;
+
+                // Collect all logs in the tree before repositioning
                 while (isLog(Beaver.this.getWorld().getBlockState(current))) {
                     logs.add(current);
                     current = current.up();
                 }
 
-                // Consume the first log in the list
+                // Consume the first log
                 this.eatLog(blockState);
 
-                // Remove the target position from logs list, so we don't reprocess it
+                // Remove the target position from logs list, so we don’t reprocess it
                 logs.remove(this.targetPos);
 
                 // Reposition the remaining logs
                 repositionLog(logs);
-
             }
         }
 
@@ -983,6 +1033,7 @@ public class Beaver extends TameableEntity implements GeoEntity {
             Beaver.this.setCarriedBlock(state);
             world.breakBlock(this.targetPos, false);
         }
+
 
         private void repositionLog(List<BlockPos> logs) {
             World world = Beaver.this.getWorld();
@@ -1000,19 +1051,23 @@ public class Beaver extends TameableEntity implements GeoEntity {
                 while (world.getBlockState(newPos.down()).isAir() || !world.getBlockState(newPos.down()).isOpaque()) {
                     newPos = newPos.down();
                 }
+
+                // After repositioning, add the new position to the storedTreeLogs list
                 world.setBlockState(newPos, getSidewaysLogState(logState), 3);
                 world.removeBlock(logPos, false);
+                storedTreeLogs.add(newPos);  // Add the repositioned log to the list
             }
         }
 
 
         @Override
         public boolean canStart() {
-            if (!super.canStart()) {
-                return false; // Return false if the superclass's canStart method returns false
+            // Don't knock down trees if the beaver is holding a block
+            if (!Beaver.this.getEquippedStack(EquipmentSlot.MAINHAND).isEmpty() || !storedTreeLogs.isEmpty()) {
+                return false;
             }
-            ItemStack itemStack = Beaver.this.getEquippedStack(EquipmentSlot.MAINHAND);
-            return itemStack.isEmpty();
+
+            return super.canStart();
         }
 
 
