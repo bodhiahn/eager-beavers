@@ -7,7 +7,10 @@ import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.PillarBlock;
 import net.minecraft.entity.*;
+import net.minecraft.entity.ai.control.AquaticMoveControl;
 import net.minecraft.entity.ai.goal.*;
+import net.minecraft.entity.ai.pathing.AmphibiousSwimNavigation;
+import net.minecraft.entity.ai.pathing.EntityNavigation;
 import net.minecraft.entity.attribute.DefaultAttributeContainer;
 import net.minecraft.entity.attribute.EntityAttributes;
 import net.minecraft.entity.data.DataTracker;
@@ -18,7 +21,6 @@ import net.minecraft.entity.passive.AnimalEntity;
 import net.minecraft.entity.passive.PassiveEntity;
 import net.minecraft.entity.passive.TameableEntity;
 import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.fluid.Fluids;
 import net.minecraft.item.*;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.particle.BlockStateParticleEffect;
@@ -98,10 +100,22 @@ public class Beaver extends TameableEntity implements GeoEntity {
     protected static final RawAnimation IDLE_ANIM = RawAnimation.begin().thenLoop("animation.beaver.idle");
     protected static final RawAnimation SWIM_ANIM = RawAnimation.begin().thenLoop("animation.beaver.swim");
     private boolean isHat = false;
-
     public Beaver(EntityType<? extends TameableEntity> entityType, World world) {
         super(entityType, world);
         this.setCanPickUpLoot(true);
+        this.getNavigation().setCanSwim(true); // Allow swimming navigation
+        this.moveControl = new AquaticMoveControl(this, 85, 10, 0.02f, 0.1f, true);
+    }
+
+
+    @Override
+    protected EntityNavigation createNavigation(World world) {
+        return new AmphibiousSwimNavigation(this, world);
+    }
+
+    // Check if the block is a log
+    private boolean isLog(BlockState state) {
+        return state.isIn(BlockTags.LOGS);
     }
 
     public boolean isHat() {
@@ -160,7 +174,7 @@ public class Beaver extends TameableEntity implements GeoEntity {
 
         public BeaverSwimGoal() {
             this.swimSpeed = 1.5; // Adjust as needed
-            this.diveFrequency = 80; // Every 80 ticks on average, adjust as needed.
+            this.diveFrequency = 300;
             this.diveTimer = 0;
             this.setControls(EnumSet.of(Goal.Control.JUMP, Goal.Control.MOVE));
             Beaver.this.getNavigation().setCanSwim(true);
@@ -197,7 +211,14 @@ public class Beaver extends TameableEntity implements GeoEntity {
             // Create bubbles.
             Beaver.this.getWorld().addParticle(ParticleTypes.BUBBLE, Beaver.this.getX(), Beaver.this.getY(), Beaver.this.getZ(), 0.1, .3, 0.1);
         }
+
+        @Override
+        public void start() {
+            this.diveTimer = 0;
+            super.start();
+        }
     }
+
     @Override
     public AnimatableInstanceCache getAnimatableInstanceCache() {
         return this.cache;
@@ -253,8 +274,6 @@ public class Beaver extends TameableEntity implements GeoEntity {
             return PlayState.STOP;
         });
     }
-
-
 
     public void setCarriedBlock(@Nullable BlockState state) {
         this.dataTracker.set(CARRIED_BLOCK, Optional.ofNullable(state));
@@ -384,37 +403,39 @@ public class Beaver extends TameableEntity implements GeoEntity {
 
         @Override
         protected void breed() {
-            ServerWorld serverWorld = (ServerWorld) this.world;
-            Beaver beaver = (Beaver) this.animal.createChild(serverWorld, this.mate);
-            if (beaver != null) {
-                ServerPlayerEntity serverPlayerEntity = this.animal.getLovingPlayer();
-                ServerPlayerEntity serverPlayerEntity2 = this.mate.getLovingPlayer();
-                ServerPlayerEntity serverPlayerEntity3 = serverPlayerEntity;
-                if (serverPlayerEntity != null) {
-                    beaver.setOwner(serverPlayerEntity);
-                    beaver.setTamed(true);
-                } else {
-                    serverPlayerEntity3 = serverPlayerEntity2;
-                }
-                if (serverPlayerEntity2 != null && serverPlayerEntity != serverPlayerEntity2) {
-                    beaver.setOwner(serverPlayerEntity2);
-                    beaver.setTamed(true);
-                }
-                if (serverPlayerEntity3 != null) {
-                    serverPlayerEntity3.incrementStat(Stats.ANIMALS_BRED);
-                    Criteria.BRED_ANIMALS.trigger(serverPlayerEntity3, this.animal, this.mate, beaver);
-                }
-                this.animal.setBreedingAge(6000);
-                this.mate.setBreedingAge(6000);
-                this.animal.resetLoveTicks();
-                this.mate.resetLoveTicks();
-                beaver.setBreedingAge(-24000);
-                beaver.refreshPositionAndAngles(this.animal.getX(), this.animal.getY(), this.animal.getZ(), 0.0f, 0.0f);
-                serverWorld.spawnEntityAndPassengers(beaver);
-                this.world.sendEntityStatus(this.animal, EntityStatuses.ADD_BREEDING_PARTICLES);
-                if (this.world.getGameRules().getBoolean(GameRules.DO_MOB_LOOT)) {
-                    this.world.spawnEntity(new ExperienceOrbEntity(this.world, this.animal.getX(), this.animal.getY(), this.animal.getZ(), this.animal.getRandom().nextInt(7) + 1));
-                }
+            super.breed();
+              ServerWorld serverWorld = (ServerWorld) this.world;
+                Beaver beaver = (Beaver) this.animal.createChild(serverWorld, this.mate);
+                if (beaver != null) {
+                    ServerPlayerEntity serverPlayerEntity = this.animal.getLovingPlayer();
+                    assert this.mate != null;
+                    ServerPlayerEntity serverPlayerEntity2 = this.mate.getLovingPlayer();
+                    ServerPlayerEntity serverPlayerEntity3 = serverPlayerEntity;
+                    if (serverPlayerEntity != null) {
+                        beaver.setOwner(serverPlayerEntity);
+                        beaver.setTamed(true);
+                    } else {
+                        serverPlayerEntity3 = serverPlayerEntity2;
+                    }
+                    if (serverPlayerEntity2 != null && serverPlayerEntity != serverPlayerEntity2) {
+                        beaver.setOwner(serverPlayerEntity2);
+                        beaver.setTamed(true);
+                    }
+                    if (serverPlayerEntity3 != null) {
+                        serverPlayerEntity3.incrementStat(Stats.ANIMALS_BRED);
+                        Criteria.BRED_ANIMALS.trigger(serverPlayerEntity3, this.animal, this.mate, beaver);
+                    }
+                    this.animal.setBreedingAge(6000);
+                    this.mate.setBreedingAge(6000);
+                    this.animal.resetLoveTicks();
+                    this.mate.resetLoveTicks();
+                    beaver.setBreedingAge(-24000);
+                    beaver.refreshPositionAndAngles(this.animal.getX(), this.animal.getY(), this.animal.getZ(), 0.0f, 0.0f);
+                    serverWorld.spawnEntityAndPassengers(beaver);
+                    this.world.sendEntityStatus(this.animal, EntityStatuses.ADD_BREEDING_PARTICLES);
+                    if (this.world.getGameRules().getBoolean(GameRules.DO_MOB_LOOT)) {
+                        this.world.spawnEntity(new ExperienceOrbEntity(this.world, this.animal.getX(), this.animal.getY(), this.animal.getZ(), this.animal.getRandom().nextInt(7) + 1));
+                    }
             }
         }
     }
@@ -454,7 +475,7 @@ public class Beaver extends TameableEntity implements GeoEntity {
             return bl ? ActionResult.CONSUME : ActionResult.PASS;
         }
 
-        if (item == Items.STICK) {
+        if (item == Items.STICK && !this.isOwner(player)) {
             if (!player.getAbilities().creativeMode) {
                 itemStack.decrement(1);
             }
@@ -514,11 +535,7 @@ public class Beaver extends TameableEntity implements GeoEntity {
         }
 
         // Check if the beaver is in the process of eating and the new item is food while the current item is not food
-        if (this.eatingTime > 0 && item.isFood() && !itemStack.getItem().isFood()) {
-            return true;
-        }
-
-        return false;
+        return this.eatingTime > 0 && item.isFood() && !itemStack.getItem().isFood();
     }
 
     private boolean isAllowedItem(Item item) {
@@ -540,11 +557,7 @@ public class Beaver extends TameableEntity implements GeoEntity {
         }
 
         // Check if the item is a stick
-        if (item == Items.STICK) {
-            return true;
-        }
-
-        return false;
+        return item == Items.STICK;
     }
 
     boolean wantsToPickupItem() {
@@ -636,22 +649,22 @@ public class Beaver extends TameableEntity implements GeoEntity {
 
     @Override
     protected void initGoals() {
-        this.goalSelector.add(0, new BeaverSwimGoal());
-        this.goalSelector.add(1, new EscapeDangerGoal(this, 1.0f));
-        this.goalSelector.add(1, new DamGoal(0.6f, 30, 10));
-        this.goalSelector.add(4, new MateGoal(1.0));
-        this.goalSelector.add(2, new FinishLogGoal());
-        this.goalSelector.add(2, new BeavGoal(0.6f, 25, 3));
-        this.goalSelector.add(1, new FollowOwnerGoal(this, .7f, 10.0f, 2.0f, false));
-        this.goalSelector.add(7, new TemptGoal(this, .5f, BREEDING_INGREDIENT, false));
-        this.goalSelector.add(8, new FollowParentGoal(this, .7f));
+        // Prioritize dam-building over collecting logs
+        this.goalSelector.add(0, new EscapeDangerGoal(this, 1.0f));
+        this.goalSelector.add(1, new MateGoal(1.0));
+        this.goalSelector.add(2, new DamGoal(0.6f, 20));
+        this.goalSelector.add(3, new FinishLogGoal());
+        this.goalSelector.add(4, new BeavGoal(0.6f, 25, 3));
+        this.goalSelector.add(5, new BeaverSwimGoal());
+        this.goalSelector.add(7, new TemptGoal(this, 0.5f, BREEDING_INGREDIENT, false));
         this.goalSelector.add(8, new PickupItemGoal());
-        this.goalSelector.add(9, new WanderAroundGoal(this, .5f));
-        this.goalSelector.add(10, new LookAtEntityGoal(this, PlayerEntity.class, 6.0f));
-        this.goalSelector.add(11, new LookAroundGoal(this));
-        this.goalSelector.add(15, new WaterWanderGoal(1.0));
-
+        this.goalSelector.add(9, new WanderAroundGoal(this, 0.5f));
+        this.goalSelector.add(10, new WaterWanderGoal(1.0));
+        this.goalSelector.add(11, new LookAtEntityGoal(this, PlayerEntity.class, 6.0f));
+        this.goalSelector.add(12, new LookAroundGoal(this));
     }
+
+
 
     @Nullable
     @Override
@@ -659,35 +672,73 @@ public class Beaver extends TameableEntity implements GeoEntity {
         return ModEntities.BEAVER.create(world);
     }
 
-    public class DamGoal extends MoveToTargetPosGoal {
-        public DamGoal(double speed, int range, int maxYDifference) {
-            super(Beaver.this, speed, range, maxYDifference);
+    public class DamGoal extends Goal {
+        private static final Direction[] HORIZONTAL_DIRECTIONS = {
+                Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST
+        };
+        private final double speed;
+        private final int range;
+        private BlockPos targetPos;
+
+        public DamGoal(double speed, int range) {
+            this.range = range;
+            this.speed = speed;
+            this.setControls(EnumSet.of(Goal.Control.MOVE));
         }
 
         @Override
         public boolean canStart() {
             ItemStack itemStack = Beaver.this.getEquippedStack(EquipmentSlot.MAINHAND);
-            // Only start if the beaver is holding a block and can find a valid water target
             if (!itemStack.isEmpty() && itemStack.getItem() instanceof BlockItem) {
                 BlockState carriedBlock = Beaver.this.getCarriedBlock();
-                return carriedBlock != null && findValidWaterTarget();
+                if (carriedBlock != null) {
+                    this.targetPos = findOptimalWaterTarget();
+                    return this.targetPos != null;
+                }
             }
             return false;
         }
 
         @Override
         public boolean shouldContinue() {
-            // Continue damming if the beaver is still holding a block and hasn't reached the target
-            return !Beaver.this.getEquippedStack(EquipmentSlot.MAINHAND).isEmpty() && super.shouldContinue();
+            return Beaver.this.getEquippedStack(EquipmentSlot.MAINHAND).getItem() instanceof BlockItem
+                    && !Beaver.this.getNavigation().isIdle();
+        }
+
+        @Override
+        public void start() {
+            if (this.targetPos != null) {
+                Beaver.this.getNavigation().startMovingTo(
+                        this.targetPos.getX() + 0.5,
+                        this.targetPos.getY(),
+                        this.targetPos.getZ() + 0.5,
+                        this.speed
+                );
+            }
+        }
+
+        @Override
+        public void stop() {
+            BeaverReservationSystem.releaseBlock(this.targetPos);
+            this.targetPos = null;
+            Beaver.this.getNavigation().stop();
         }
 
         @Override
         public void tick() {
-            super.tick();
+            if (this.targetPos == null) {
+                return;
+            }
 
-            // Once the beaver reaches the target, place the block
-            if (this.hasReached()) {
-                this.placeDamBlock();
+            if (Beaver.this.squaredDistanceTo(Vec3d.ofCenter(this.targetPos)) < 2.0D) {
+                placeDamBlock();
+            } else {
+                Beaver.this.getNavigation().startMovingTo(
+                        this.targetPos.getX() + 0.5,
+                        this.targetPos.getY(),
+                        this.targetPos.getZ() + 0.5,
+                        this.speed
+                );
             }
         }
 
@@ -708,75 +759,92 @@ public class Beaver extends TameableEntity implements GeoEntity {
                 world.emitGameEvent(GameEvent.BLOCK_PLACE, targetPos, GameEvent.Emitter.of(Beaver.this, carriedBlock));
                 Beaver.this.setCarriedBlock(null);  // Clear the carried block
                 itemStack.decrement(1);  // Decrement the item stack after placing the block
+                BeaverReservationSystem.releaseBlock(targetPos);
                 this.stop();  // Stop the goal after placing the block
             }
         }
 
-        // Method to find valid water target adjacent to land
-        private boolean findValidWaterTarget() {
+        private BlockPos findOptimalWaterTarget() {
             World world = Beaver.this.getWorld();
             BlockPos beaverPos = Beaver.this.getBlockPos();
-            int searchRadius = 6;  // Search radius for finding suitable water
+            int searchRadius = range;
+
+            BlockPos bestPos = null;
+            int bestScore = Integer.MIN_VALUE;
 
             for (BlockPos pos : BlockPos.iterateOutwards(beaverPos, searchRadius, searchRadius, searchRadius)) {
-                if (isValidWaterTarget(pos, world)) {
-                    this.targetPos = pos;  // Set the valid water target
-                    return true;
+                BlockState blockState = world.getBlockState(pos);
+
+                if (!world.getBlockState(pos.up()).isAir()){
+                    continue;
+                }
+
+                if (!blockState.getFluidState().isIn(FluidTags.WATER)) {
+                    continue;
+                }
+
+                if (!BeaverReservationSystem.isBlockFree(pos, Beaver.this.getUuid())) {
+                    continue;
+                }
+
+                // Check if adjacent to solid block and log (cardinal directions only)
+                boolean adjacentToSolid = false;
+                boolean adjacentToLog = false;
+
+                for (Direction dir : HORIZONTAL_DIRECTIONS) {
+                    BlockPos adjPos = pos.offset(dir);
+                    BlockState adjState = world.getBlockState(adjPos);
+
+                    if (adjState.isOpaqueFullCube(world, adjPos)) {
+                        adjacentToSolid = true;
+                    }
+                    if (adjState.isIn(BlockTags.LOGS)) {
+                        adjacentToLog = true;
+                    }
+                }
+
+                if (!adjacentToSolid) {
+                    continue;
+                }
+
+                // Count adjacent water blocks (including diagonals)
+                int adjacentWaterCount = 0;
+
+                for (int dx = -1; dx <= 1; dx++) {
+                    for (int dz = -1; dz <= 1; dz++) {
+                        if (dx == 0 && dz == 0) {
+                            continue; // Skip the current position
+                        }
+                        BlockPos adjPos = pos.add(dx, 0, dz);
+                        BlockState adjState = world.getBlockState(adjPos);
+                        if (adjState.getFluidState().isIn(FluidTags.WATER)) {
+                            adjacentWaterCount++;
+                        }
+                    }
+                }
+
+                // Compute score based on criteria
+                int score = 0;
+                if (adjacentToLog) {
+                    score += 10; // Prioritize connecting to existing logs
+                }
+                score += adjacentWaterCount; // More adjacent water blocks preferred
+
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestPos = pos.toImmutable();
                 }
             }
-            return false;  // No valid target found
-        }
 
-        // Override the isTargetPos method inherited from MoveToTargetPosGoal
-        @Override
-        protected boolean isTargetPos(WorldView world, BlockPos pos) {
-            return isValidWaterTarget(pos, (World) world);  // Check if the target is valid water
-        }
-
-        // Method to check if a water block is valid (i.e., adjacent to solid land)
-        private boolean isValidWaterTarget(BlockPos pos, World world) {
-            BlockState blockState = world.getBlockState(pos);
-
-            // Ensure the block is water
-            if (blockState.getFluidState().getFluid() != Fluids.WATER) {
-                return false;
+            if (bestPos != null) {
+                BeaverReservationSystem.reserveBlock(bestPos, Beaver.this.getUuid());
             }
 
-            // Check if the water block is adjacent to solid ground
-            for (Direction direction : Direction.values()) {
-                BlockPos adjacentPos = pos.offset(direction);
-                BlockState adjacentState = world.getBlockState(adjacentPos);
-
-                if (adjacentState.isOpaque() && adjacentState.isSolidBlock(world, adjacentPos)) {
-                    return true;  // Water block is valid if there's adjacent solid land
-                }
-            }
-
-            return false;  // No adjacent land, so not a valid water target
+            return bestPos;
         }
 
-        protected boolean hasReached() {
-            // Check if the beaver has reached the target position
-            return targetPos != null && targetPos.isWithinDistance(Beaver.this.getPos(), 1.5);
-        }
     }
 
-
-
-    // Check if the block is a log
-    private boolean isLog(BlockState state) {
-        return state.isIn(BlockTags.LOGS);
-    }
-
-    // Get the sideways state of a log
-    private BlockState getSidewaysLogState(BlockState original) {
-        if (original.getBlock() instanceof PillarBlock) {
-            return original.with(PillarBlock.AXIS, Direction.Axis.X);
-        }
-        // If the block isn't a PillarBlock (or doesn't have the AXIS property),
-        // simply return the original state or some default.
-        return original;
-    }
 
     public class FinishLogGoal extends Goal {
         private static final int EATING_TIME = 30;
@@ -796,9 +864,12 @@ public class Beaver extends TameableEntity implements GeoEntity {
         @Override
         public boolean shouldContinue() {
             // If the beaver cannot pathfind to the block, stop.
-            if (Beaver.this.getNavigation().findPathTo(this.targetPos, 2) == null) {
-                return false;
-            }
+//            if (Beaver.this.getNavigation().findPathTo(this.targetPos, 2) == null) {
+//                if (Beaver.this.getPos().distanceTo(this.targetPos.toCenterPos()) > 2) {
+//                    Beaver.this.storedTreeLogs.remove(0);
+//                    return false;
+//                }
+//            }
 
             // Additional check to prevent the beaver from continuing if it already holds a log
             ItemStack itemStack = Beaver.this.getEquippedStack(EquipmentSlot.MAINHAND);
@@ -863,7 +934,6 @@ public class Beaver extends TameableEntity implements GeoEntity {
                         this.stop();  // Stop the goal after processing one log to allow DamGoal to take over
                     }
                 } else {
-                    // Pathfinding towards the log
                     Beaver.this.getNavigation().startMovingTo(targetPos.getX(), targetPos.getY(), targetPos.getZ(), 0.6);
                 }
             }
@@ -887,7 +957,7 @@ public class Beaver extends TameableEntity implements GeoEntity {
         }
     }
 
-    public class BeavGoal extends MoveToTargetPosGoal {
+        public class BeavGoal extends MoveToTargetPosGoal {
         private static final int EATING_TIME = 30;
         protected int timer;
 
@@ -948,11 +1018,20 @@ public class Beaver extends TameableEntity implements GeoEntity {
                 return false;
             }
 
-            return hasLeavesAbove(world, pos);
+            //check the second block down which should be dirt or grass or something
+            if (world.getBlockState(pos.down().down()).isIn(BlockTags.LOGS)) {
+                return false;
+            }
+
+            if (!hasLeavesAbove(world, pos)) {
+                return false;
+            }
+
+            return BeaverReservationSystem.isBlockFree(pos, Beaver.this.getUuid());
         }
 
         private boolean hasLeavesAbove(WorldView world, BlockPos pos) {
-            for (int i = 1; i <= 10; i++) { // check 10 blocks above
+            for (int i = 1; i <= 20; i++) {
                 BlockState blockAbove = world.getBlockState(pos.up(i));
                 if (blockAbove.isIn(BlockTags.LEAVES)) {
                     return true;
@@ -975,6 +1054,7 @@ public class Beaver extends TameableEntity implements GeoEntity {
                 if (this.timer < EATING_TIME) {
                     Beaver.this.startEatingTree();
                     if (this.timer % 5 == 0) { // Play particle effect and sound every second
+                        Beaver.this.playSound(SoundEvents.ENTITY_GENERIC_EAT, .4f, 1.5f);
                         Vec3d blockCenter = new Vec3d(this.targetPos.getX() + 0.5, this.targetPos.getY() - 0.5, this.targetPos.getZ() + 0.5);
                         Vec3d beaverPos = new Vec3d(Beaver.this.getX(), Beaver.this.getY(), Beaver.this.getZ());
 
@@ -988,7 +1068,6 @@ public class Beaver extends TameableEntity implements GeoEntity {
                         world.spawnParticles(new BlockStateParticleEffect(ParticleTypes.BLOCK, Beaver.this.getWorld().getBlockState(this.targetPos)),
                                 spawnX, spawnY, spawnZ, 200,
                                 0.0D, 0.0D, 0.0D, 2.0D);
-                        Beaver.this.playSound(SoundEvents.ENTITY_GENERIC_EAT, .4f, 1.5f);
                     }
                     this.timer++;
                 } else {
@@ -1059,6 +1138,16 @@ public class Beaver extends TameableEntity implements GeoEntity {
             }
         }
 
+        // Get the sideways state of a log
+        private BlockState getSidewaysLogState(BlockState original) {
+            if (original.getBlock() instanceof PillarBlock) {
+                return original.with(PillarBlock.AXIS, Direction.Axis.X);
+            }
+            // If the block isn't a PillarBlock (or doesn't have the AXIS property),
+            // simply return the original state or some default.
+            return original;
+        }
+
 
         @Override
         public boolean canStart() {
@@ -1067,9 +1156,22 @@ public class Beaver extends TameableEntity implements GeoEntity {
                 return false;
             }
 
-            return super.canStart();
+            if (super.canStart()) {
+                BeaverReservationSystem.reserveBlock(this.targetPos, Beaver.this.getUuid());
+                return true;
+            }
+            return false;
         }
 
+        @Override
+        public void stop() {
+            if (targetPos != null) {
+                BeaverReservationSystem.releaseBlock(targetPos);  // Release the block reservation
+            }
+            targetPos = null;
+            timer = 0;
+            super.stop();
+        }
 
         @Override
         public void start() {

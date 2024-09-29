@@ -1,0 +1,10 @@
+{
+  "type": "minecraft:jigsaw",
+  "biomes": "#minecraft:is_river",
+  "config": {
+    "start_pool": "beavermod:lodge/start_pool",
+    "size": 1
+  },
+  "adapt_noise": true,
+  "spawn_overrides": {}
+}
