@@ -9,11 +9,13 @@ import net.minecraft.entity.passive.AnimalEntity;
 import net.minecraft.world.Heightmap;
 import net.minecraft.world.biome.BiomeKeys;
 
+import static net.minecraft.entity.SpawnLocationTypes.ON_GROUND;
+
 public class BeaverSpawn {
     public static void addEntitySpawn() {
         BiomeModifications.addSpawn(BiomeSelectors.includeByKey(BiomeKeys.RIVER), SpawnGroup.CREATURE,
                 ModEntities.BEAVER, 5, 1, 3);
-        SpawnRestriction.register(ModEntities.BEAVER, SpawnRestriction.Location.ON_GROUND,
+        SpawnRestriction.register(ModEntities.BEAVER, ON_GROUND,
                 Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, AnimalEntity::canMobSpawn);
     }
 }

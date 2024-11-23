@@ -3,6 +3,7 @@ package bodhi.beaver.materials;
 import bodhi.beaver.BeaverMod;
 import net.minecraft.item.ArmorItem;
 import net.minecraft.item.ArmorMaterial;
+import net.minecraft.item.ArmorMaterials;
 import net.minecraft.recipe.Ingredient;
 import net.minecraft.registry.Registries;
 import net.minecraft.sound.SoundEvent;

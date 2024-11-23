@@ -12,6 +12,7 @@ import net.fabricmc.fabric.api.object.builder.v1.entity.FabricDefaultAttributeRe
 import net.minecraft.item.*;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.Registry;
+import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.sound.SoundEvent;
 import net.minecraft.util.Identifier;
 import software.bernie.geckolib.GeckoLib;
@@ -23,12 +24,10 @@ public class BeaverMod implements ModInitializer {
     public static final Identifier BEAVER_AMBIENT_ID = new Identifier("beavermod:beaver_ambient");
     public static SoundEvent BEAVER_AMBIENT = SoundEvent.of(BEAVER_AMBIENT_ID);
     public static final Item BEAVER_SPAWN_EGG = new SpawnEggItem(ModEntities.BEAVER, 0x4a2d22, 0x632820, new Item.Settings());
-    public static final Item BEAVER_PELT = new BeaverPelt(new FabricItemSettings());
+    public static final Item BEAVER_PELT = new BeaverPelt(new Item.Settings());
 
-    public static final Item BEAVER_HELMET = new ArmorItem(beaverMaterial, ArmorItem.Type.HELMET, new Item.Settings());
-    @Override
+    public static final Item BEAVER_HELMET = new ArmorItem(RegistryEntry.of(beaverMaterial), ArmorItem.Type.HELMET, new Item.Settings());    @Override
     public void onInitialize() {
-        GeckoLib.initialize();
         BeaverGen.generateWorldGen();
         FabricDefaultAttributeRegistry.register(ModEntities.BEAVER, Beaver.setAttributes());
         Registry.register(Registries.ITEM, new Identifier(MOD_ID, "beaver_spawn_egg"), BEAVER_SPAWN_EGG);

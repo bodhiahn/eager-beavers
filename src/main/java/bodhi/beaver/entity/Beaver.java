@@ -6,6 +6,8 @@ import net.minecraft.advancement.criterion.Criteria;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.PillarBlock;
+import net.minecraft.component.DataComponentType;
+import net.minecraft.component.type.FoodComponent;
 import net.minecraft.entity.*;
 import net.minecraft.entity.ai.goal.*;
 import net.minecraft.entity.attribute.DefaultAttributeContainer;
@@ -18,11 +20,14 @@ import net.minecraft.entity.passive.AnimalEntity;
 import net.minecraft.entity.passive.PassiveEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.*;
+import net.minecraft.loot.LootTable;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.particle.BlockStateParticleEffect;
 import net.minecraft.particle.ItemStackParticleEffect;
 import net.minecraft.particle.ParticleTypes;
 import net.minecraft.recipe.Ingredient;
+import net.minecraft.registry.RegistryKey;
+import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.tag.BlockTags;
 import net.minecraft.registry.tag.FluidTags;
 import net.minecraft.registry.tag.ItemTags;
@@ -39,13 +44,10 @@ import net.minecraft.util.math.random.Random;
 import net.minecraft.world.*;
 import net.minecraft.world.event.GameEvent;
 import org.jetbrains.annotations.Nullable;
+import software.bernie.geckolib.animatable.GeoAnimatable;
 import software.bernie.geckolib.animatable.GeoEntity;
-import software.bernie.geckolib.core.animatable.GeoAnimatable;
-import software.bernie.geckolib.core.animatable.instance.AnimatableInstanceCache;
-import software.bernie.geckolib.core.animation.AnimatableManager;
-import software.bernie.geckolib.core.animation.AnimationController;
-import software.bernie.geckolib.core.animation.RawAnimation;
-import software.bernie.geckolib.core.object.PlayState;
+import software.bernie.geckolib.animatable.instance.AnimatableInstanceCache;
+import software.bernie.geckolib.animation.*;
 import software.bernie.geckolib.util.GeckoLibUtil;
 
 
@@ -93,11 +95,18 @@ public class Beaver extends AnimalEntity implements GeoEntity {
     protected static final RawAnimation WALK_ANIM = RawAnimation.begin().thenLoop("animation.beaver.walk");
     protected static final RawAnimation IDLE_ANIM = RawAnimation.begin().thenLoop("animation.beaver.idle");
     protected static final RawAnimation SWIM_ANIM = RawAnimation.begin().thenLoop("animation.beaver.swim");
+
+
     private boolean isHat = false;
     public Beaver(EntityType<? extends AnimalEntity> entityType, World world) {
         super(entityType, world);
         this.setCanPickUpLoot(true);
         this.getNavigation().setCanSwim(true);
+    }
+
+    @Override
+    public int getMaxAir() {
+        return 4800;
     }
 
     // Check if the block is a log
@@ -124,8 +133,8 @@ public class Beaver extends AnimalEntity implements GeoEntity {
     }
 
     @Override
-    protected Identifier getLootTableId() {
-        return new Identifier("beavermod", "entities/beaver");
+    protected RegistryKey<LootTable> getLootTableId() {
+        return RegistryKey.of(RegistryKeys.LOOT_TABLE, new Identifier("beavermod", "entities/beaver"));
     }
 
     private boolean isEatingTree = false;
@@ -143,6 +152,12 @@ public class Beaver extends AnimalEntity implements GeoEntity {
     }
 
     @Override
+    public void remove(Entity.RemovalReason reason) {
+        BeaverReservationSystem.releaseBeaverReservation(this.getUuid());
+        super.remove(reason);
+    }
+
+    @Override
     public AnimatableInstanceCache getAnimatableInstanceCache() {
         return this.cache;
     }
@@ -155,11 +170,7 @@ public class Beaver extends AnimalEntity implements GeoEntity {
         controllers.add(hatController());
     }
 
-    @Override
-    public void remove(Entity.RemovalReason reason) {
-        BeaverReservationSystem.releaseBeaverReservation(this.getUuid());
-        super.remove(reason);
-    }
+
 
     private <T extends GeoAnimatable> AnimationController<Beaver> genericWalkIdleController() {
         return new AnimationController<Beaver>(Beaver.this, "Walk/Idle", 0, state -> {
@@ -410,8 +421,11 @@ public class Beaver extends AnimalEntity implements GeoEntity {
         return equipmentSlot == EquipmentSlot.MAINHAND && super.canEquip(stack);
     }
 
+    private boolean isFood(Item item) {
+        return Boolean.TRUE.equals(item.getComponents().get(FoodComponent));
+    }
     private boolean canEat(ItemStack stack) {
-        return stack.getItem().isFood() && this.getTarget() == null && this.isOnGround() && !this.isSleeping();
+        return stack.getItem().getComponents(). && this.getTarget() == null && this.isOnGround() && !this.isSleeping();
     }
 
     @Override
@@ -494,11 +508,6 @@ public class Beaver extends AnimalEntity implements GeoEntity {
             }
         }
     }
-    @Override
-    public boolean canBreatheInWater() {
-        return true;
-    }
-
 
     @Override
     protected void initDataTracker() {
